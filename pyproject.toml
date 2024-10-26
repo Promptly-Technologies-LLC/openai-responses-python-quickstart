@@ -1,9 +1,9 @@
 [project]
-name = "openai-assistants-quickstart"
+name = "openai-assistants-python-quickstart"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.3",
     "jinja2>=3.1.4",

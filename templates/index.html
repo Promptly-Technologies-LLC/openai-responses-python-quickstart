@@ -7,7 +7,7 @@
     </div>
     <div class="container">
       {% for name, url in categories.items() %}
-        <a class="category" href="/examples/{{ url }}">
+        <a class="category" href="/{{ url }}">
           {{ name }}
         </a>
       {% endfor %}
