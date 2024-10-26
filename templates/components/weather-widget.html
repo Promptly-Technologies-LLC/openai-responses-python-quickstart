@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="{{ 'weatherWidget' }} {{ 'weatherEmptyState' if isEmpty else conditionClassMap.get(conditions, 'weatherBGSunny') }}">
+  <div class="weatherWidgetData">
+    {% if isEmpty %}
+      <p>Enter a city to see local weather</p>
+      <p>try: what's the weather like in Berkeley?</p>
+    {% else %}
+      <p>{{ location }}</p>
+      <h2>{{ temperature if temperature != '---' else temperature }}°F</h2>
+      <p>{{ conditions }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+

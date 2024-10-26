@@ -1,0 +1,16 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+  <main>
+    <div class="title">
+      Explore sample apps built with Assistants API
+    </div>
+    <div class="container">
+      {% for name, url in categories.items() %}
+        <a class="category" href="/examples/{{ url }}">
+          {{ name }}
+        </a>
+      {% endfor %}
+    </div>
+  </main>
+{% endblock %}

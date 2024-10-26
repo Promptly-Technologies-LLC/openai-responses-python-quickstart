@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chatContainer">
+  <div class="messages">
+    {% for msg in messages %}
+      {% if msg.role == "user" %}
+        <div class="userMessage">{{ msg.text }}</div>
+      {% elif msg.role == "assistant" %}
+        <div class="assistantMessage">
+          {{ msg.text | safe }}
+        </div>
+      {% elif msg.role == "code" %}
+        <div class="codeMessage">
+          {% for line in msg.text.split('\n') %}
+            <div>
+              <span>{{ loop.index }}. </span>{{ line }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+    <div id="messagesEndRef"></div>
+  </div>
+  <form method="post" action="/send_message" class="inputForm clearfix">
+    <input
+      type="text"
+      class="input"
+      name="userInput"
+      value="{{ userInput }}"
+      placeholder="Enter your question"
+    />
+    <button
+      type="submit"
+      class="button"
+      {% if inputDisabled %}disabled{% endif %}
+    >
+      Send
+    </button>
+  </form>
+</div>
+{% endblock %}
