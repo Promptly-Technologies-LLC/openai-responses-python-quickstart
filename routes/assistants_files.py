@@ -1,18 +1,21 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, UploadFile, File
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
+load_dotenv()
+
 app = FastAPI()
 
 # Initialize OpenAI client
-openai = AsyncOpenAI(api_key="your-api-key")
+openai = AsyncOpenAI()
 
 # Pydantic model for DELETE request body
 class DeleteRequest(BaseModel):
     fileId: str
 
 # Helper function to get or create a vector store
-async def get_or_create_vector_store() -> str:
+async def get_or_create_vector_store(assistantId: str) -> str:
     assistant = await openai.beta.assistants.retrieve(assistantId)
     if assistant.tool_resources and assistant.tool_resources.file_search and assistant.tool_resources.file_search.vector_store_ids:
         return assistant.tool_resources.file_search.vector_store_ids[0]

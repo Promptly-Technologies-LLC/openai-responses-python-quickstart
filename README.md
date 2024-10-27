@@ -26,13 +26,19 @@ uv venv
 uv pip install -r pyproject.toml
 ```
 
-### 4. Run
+### 4. Create an assistant
+
+```shell
+uv run create_assistant.py
+```
+
+### 5. Run the FastAPI server
 
 ```shell
 uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5. Navigate to [http://localhost:3000](http://localhost:3000).
+### 6. Navigate to [http://localhost:3000](http://localhost:3000).
 
 ## Overview
 
