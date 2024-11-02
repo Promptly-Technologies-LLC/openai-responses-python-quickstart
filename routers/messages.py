@@ -51,7 +51,7 @@ async def stream_response(
     # Create a generator to stream the response from the assistant
     # Create a generator to stream the response from the assistant
     async def event_generator():
-        stream = openai.beta.threads.runs.stream(
+        stream: AsyncAssistantStreamManager = openai.beta.threads.runs.stream(
             assistant_id=assistant_id,
             thread_id=thread_id
         )
