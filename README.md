@@ -39,9 +39,3 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 6. Navigate to [http://localhost:8000](http://localhost:8000).
-- `api/assistants/threads/[threadId]/actions` - `POST`: inform assistant of the result of a function it decided to call
-- `api/assistants/files` - `GET`/`POST`/`DELETE`: fetch, upload, and delete assistant files for file search
-
-## Feedback
-
-Let us know if you have any thoughts, questions, or feedback in [this form](https://docs.google.com/forms/d/e/1FAIpQLScn_RSBryMXCZjCyWV4_ebctksVvQYWkrq90iN21l1HLv3kPg/viewform?usp=sf_link)!
