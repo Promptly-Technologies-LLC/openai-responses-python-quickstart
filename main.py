@@ -1,16 +1,15 @@
 import os
 import logging
-import dotenv
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from routers import messages, assistants_files, tool_outputs
+from fastapi.responses import RedirectResponse
+from routers import files, messages, tools, api_keys, assistants
 
 
 logger = logging.getLogger("uvicorn.error")
-
-dotenv.load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,9 +21,10 @@ app = FastAPI(lifespan=lifespan)
 
 # Mount routers
 app.include_router(messages.router)
-app.include_router(assistants_files.router)
-app.include_router(tool_outputs.router)
-
+app.include_router(files.router)
+app.include_router(tools.router)
+app.include_router(api_keys.router)
+app.include_router(assistants.router)
 
 # Mount static files (e.g., CSS, JS)
 app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")), name="static")
@@ -35,6 +35,11 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/")
 async def read_home(request: Request):
     logger.info("Home page requested")
+    
+    # Check if environment variables are missing
+    load_dotenv(override=True)
+    if not os.getenv("OPENAI_API_KEY") or not os.getenv("ASSISTANT_ID"):
+        return RedirectResponse(url="/setup")
     
     categories = {
         "Basic chat": "basic-chat",
@@ -105,6 +110,23 @@ async def read_all(request: Request, messages: list = [], thread_id: str = None)
             "thread_id": thread_id,
             "messages": messages
         }
+    )
+
+# Add new setup route
+@app.get("/setup")
+async def read_setup(request: Request, message: str = None):
+    # Check if assistant ID is missing
+    load_dotenv(override=True)
+    if not os.getenv("OPENAI_API_KEY"):
+        message="OpenAI API key is missing."
+    elif not os.getenv("ASSISTANT_ID"):
+        message="Assistant ID is missing."
+    else:
+        message="All set up!"
+    
+    return templates.TemplateResponse(
+        "setup.html",
+        {"request": request, "message": message}
     )
 
 if __name__ == "__main__":
