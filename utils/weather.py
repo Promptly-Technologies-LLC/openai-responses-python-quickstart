@@ -1,4 +1,7 @@
 import random
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 def get_weather(location):
     """
