@@ -52,20 +52,23 @@ def update_env_file(var_name: str, var_value: str, logger: logging.Logger):
         var_value: The value to set for the environment variable
         logger: Logger instance for output
     """
+    lines = []
+    # Read existing contents if file exists
     if os.path.exists('.env'):
         with open('.env', 'r') as env_file:
             lines = env_file.readlines()
 
         # Remove any existing line with this variable
         lines = [line for line in lines if not line.startswith(f"{var_name}=")]
+    else:
+        # Log when we're creating a new .env file
+        logger.info("Creating new .env file")
 
-        # Write back the modified lines
-        with open('.env', 'w') as env_file:
-            env_file.writelines(lines)
-
-    # Write the new variable to the .env file
-    with open('.env', 'a') as env_file:
+    # Write back all lines including the new variable
+    with open('.env', 'w') as env_file:
+        env_file.writelines(lines)
         env_file.write(f"{var_name}={var_value}\n")
+    
     logger.debug(f"Environment variable {var_name} written to .env: {var_value}")
 
 
