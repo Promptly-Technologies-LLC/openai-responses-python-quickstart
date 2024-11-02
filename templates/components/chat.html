@@ -19,13 +19,14 @@
     {% endfor %}
     <div id="messagesEndRef"></div>
   </div>
-  <form method="post" action="/send_message" class="inputForm clearfix">
+  <form id="chatForm" class="inputForm clearfix">
+    {% if thread_id is not none %}value="{{ thread_id }}"{% endif %}
     <input
       type="text"
       class="input"
       name="userInput"
-      value="{{ userInput }}"
       placeholder="Enter your question"
+      id="userInput"
     />
     <button
       type="submit"
@@ -36,3 +37,127 @@
     </button>
   </form>
 </div>
+
+<script>
+  document.getElementById('chatForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const form = e.target;
+    const input = form.querySelector('#userInput');
+    let threadId = form.querySelector('input[name="thread_id"]')?.value;
+    const messagesDiv = document.querySelector('.messages');
+
+    // Don't send empty messages
+    if (!input.value.trim()) return;
+
+    // Append user message immediately
+    const userMessageDiv = document.createElement('div');
+    userMessageDiv.className = 'userMessage';
+    userMessageDiv.textContent = input.value;
+    messagesDiv.insertBefore(userMessageDiv, document.getElementById('messagesEndRef'));
+
+    // Store message and clear input before sending
+    const messageText = input.value;
+    input.value = '';
+
+    // Scroll to bottom after user message
+    messagesEndRef.scrollIntoView({ behavior: 'smooth' });
+
+    // Create form data
+    const formData = new FormData();
+    formData.append('userInput', messageText);
+    if (threadId) {
+      formData.append('thread_id', threadId);
+    }
+
+    // First send the message via POST
+    fetch('/send_message', {
+      method: 'POST',
+      body: formData
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      return response.json();
+    }).then(data => {
+      // Update the thread_id if we got a new one
+      if (data.thread_id) {
+        const threadInput = form.querySelector('input[name="thread_id"]');
+        if (!threadInput) {
+          const newThreadInput = document.createElement('input');
+          newThreadInput.type = 'hidden';
+          newThreadInput.name = 'thread_id';
+          newThreadInput.value = data.thread_id;
+          form.appendChild(newThreadInput);
+        } else {
+          threadInput.value = data.thread_id;
+        }
+        threadId = data.thread_id;
+      }
+      
+      // Create URL params
+      const urlParams = new URLSearchParams();
+      if (threadId && threadId !== "None") {
+        urlParams.append('thread_id', threadId);
+      }
+      
+      // Create and store EventSource reference
+      const eventSource = new EventSource('/stream_response?' + urlParams.toString());
+
+      // Add cleanup when page is unloaded
+      window.addEventListener('beforeunload', () => {
+        if (eventSource) {
+          eventSource.close();
+        }
+      });
+
+      let currentMessageDiv = null;
+
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        // Check if this is a completion message
+        if (data.complete) {
+          clearTimeout(streamTimeout);
+          eventSource.close();
+          return;
+        }
+        
+        // Create message div if it doesn't exist
+        if (!currentMessageDiv) {
+          currentMessageDiv = document.createElement('div');
+          currentMessageDiv.className = 'assistantMessage';
+          messagesDiv.insertBefore(currentMessageDiv, document.getElementById('messagesEndRef'));
+        }
+        
+        // Append new text
+        currentMessageDiv.innerHTML += data.text;
+
+        // Scroll to bottom
+        messagesEndRef.scrollIntoView({ behavior: 'smooth' });
+      };
+      
+      // Enhanced error handling
+      eventSource.onerror = (error) => {
+        console.error('EventSource failed:', error);
+        eventSource.close();
+        // Optionally add an error message to the chat
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'errorMessage';
+        errorDiv.textContent = 'Message failed to send. Please try again.';
+        messagesDiv.insertBefore(errorDiv, document.getElementById('messagesEndRef'));
+      };
+
+      // Add timeout
+      const streamTimeout = setTimeout(() => {
+        if (eventSource.readyState !== EventSource.CLOSED) {
+          eventSource.close();
+          console.warn('Stream timed out');
+        }
+      }, 30000); // 30 second timeout
+    }).catch(error => {
+      console.error('Error:', error);
+      // Maybe add some user-facing error message here
+    });
+  });
+</script>
