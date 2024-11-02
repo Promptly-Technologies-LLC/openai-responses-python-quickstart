@@ -452,3 +452,42 @@ pre {
   color: #b8b8b8;
   margin-right: 8px;
 }
+
+.setupContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  max-width: 600px;
+  width: 100%;
+  padding: 40px 20px;
+}
+
+.setupForm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.inputWrapper {
+  margin-bottom: 20px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  justify-content: center;
+}
+
+.setupForm form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.setupMessage {
+  font-size: 1.1em;
+  text-align: center;
+  margin-bottom: 8px;
+}

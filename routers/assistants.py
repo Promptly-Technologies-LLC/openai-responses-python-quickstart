@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import RedirectResponse
 from openai import AsyncOpenAI
 from utils.create_assistant import create_or_update_assistant, request
 import logging
@@ -34,6 +35,4 @@ async def create_update_assistant(
         logger=logger
     )
 
-    return {
-        "message": f"Assistant {assistant_id} successfully created/updated"
-    }
+    return RedirectResponse(url="/", status_code=303)
