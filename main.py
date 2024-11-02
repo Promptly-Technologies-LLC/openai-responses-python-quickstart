@@ -1,16 +1,18 @@
 import os
 import logging
-import dotenv
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from routers import messages, assistants_files, tool_outputs
+from fastapi.responses import RedirectResponse
+from routers import files, messages, tools
 
 
 logger = logging.getLogger("uvicorn.error")
 
-dotenv.load_dotenv()
+# Get the assistant ID from .env file
+load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,8 +24,8 @@ app = FastAPI(lifespan=lifespan)
 
 # Mount routers
 app.include_router(messages.router)
-app.include_router(assistants_files.router)
-app.include_router(tool_outputs.router)
+app.include_router(files.router)
+app.include_router(tools.router)
 
 
 # Mount static files (e.g., CSS, JS)
@@ -35,6 +37,12 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/")
 async def read_home(request: Request):
     logger.info("Home page requested")
+    
+    # Check if assistant ID is missing
+    if not os.getenv("ASSISTANT_ID"):
+        return RedirectResponse(url="/warnings", message="Assistant ID is missing")
+    elif not os.getenv("OPENAI_API_KEY"):
+        return RedirectResponse(url="/warnings", message="OpenAI API key is missing")
     
     categories = {
         "Basic chat": "basic-chat",
@@ -105,6 +113,14 @@ async def read_all(request: Request, messages: list = [], thread_id: str = None)
             "thread_id": thread_id,
             "messages": messages
         }
+    )
+
+# Add new warnings route
+@app.get("/warnings")
+async def read_warnings(request: Request):
+    return templates.TemplateResponse(
+        "warnings.html",
+        {"request": request}
     )
 
 if __name__ == "__main__":
