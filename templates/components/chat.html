@@ -63,7 +63,7 @@
     // Scroll to bottom after user message
     messagesEndRef.scrollIntoView({ behavior: 'smooth' });
 
-    // Replace EventSource with fetch
+    // Create form data
     const formData = new FormData();
     formData.append('userInput', messageText);
     if (threadId) {
@@ -95,7 +95,7 @@
         threadId = data.thread_id;
       }
       
-      // Only create EventSource after successful message send
+      // Create URL params
       const urlParams = new URLSearchParams();
       if (threadId && threadId !== "None") {
         urlParams.append('thread_id', threadId);
