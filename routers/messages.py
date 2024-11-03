@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
@@ -10,29 +10,22 @@ from utils.threads import create_thread
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 
-# Get the assistant ID from .env file
-load_dotenv()
-assistant_id: str = os.getenv("ASSISTANT_ID")
-
 # Initialize the router
 router: APIRouter = APIRouter()
-
-# Initialize the OpenAI client
-openai: AsyncOpenAI = AsyncOpenAI()
 
 # Send a new message to a thread
 @router.post("/send_message")
 async def post_message(
-    request: Request,
     userInput: str = Form(...),
-    thread_id: str | None = Form(None)
+    thread_id: str | None = Form(None),
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> dict:
     # Create a new assistant chat thread if no thread ID is provided
     if not thread_id or thread_id == "None" or thread_id == "null":
         thread_id: str = await create_thread()
 
     # Create a new message in the thread
-    await openai.beta.threads.messages.create(
+    await client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=userInput
@@ -42,17 +35,17 @@ async def post_message(
 
 @router.get("/stream_response")
 async def stream_response(
-    request: Request,
     thread_id: str | None = None,
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
     if not thread_id:
         raise HTTPException(status_code=400, message="thread_id is required")
    
     # Create a generator to stream the response from the assistant
-    # Create a generator to stream the response from the assistant
+    load_dotenv()
     async def event_generator():
-        stream: AsyncAssistantStreamManager = openai.beta.threads.runs.stream(
-            assistant_id=assistant_id,
+        stream: AsyncAssistantStreamManager = client.beta.threads.runs.stream(
+            assistant_id=os.getenv("ASSISTANT_ID"),
             thread_id=thread_id
         )
         async with stream as stream_manager:
