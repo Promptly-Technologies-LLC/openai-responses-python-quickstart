@@ -16,8 +16,7 @@ cd openai-assistants-python-quickstart
 ### 2. Install dependencies
 
 ```shell
-uv venv
-uv pip install -r pyproject.toml
+uv sync
 ```
 
 ### 3. Run the FastAPI server

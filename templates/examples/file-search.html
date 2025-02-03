@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 
 {% block content %}
 <main class="main">
@@ -6,11 +6,7 @@
     <div class="column">
       {% include "components/file-viewer.html" %}
     </div>
-    <div class="chatContainer">
-      <div class="chat">
-        {% include "components/chat.html" %}
-      </div>
-    </div>
+    {% include "components/chat.html" %}
   </div>
 </main>
 {% endblock %}
