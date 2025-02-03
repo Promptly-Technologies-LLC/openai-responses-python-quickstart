@@ -19,7 +19,6 @@
     {% endfor %}
   </div>
   <form id="chatForm" class="inputForm clearfix">
-    <input type="hidden" value="{{ thread_id }}">
     <input
       type="text"
       class="input"
@@ -30,7 +29,7 @@
     <button
       type="submit"
       class="button"
-      hx-post="/assistants/{assistant_id}/messages/send"
+      hx-post="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/send"
       hx-target="#messages"
       hx-swap="beforeEnd"
       {% if inputDisabled %}disabled{% endif %}
