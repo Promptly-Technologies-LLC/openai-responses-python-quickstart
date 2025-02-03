@@ -30,7 +30,7 @@
     <button
       type="submit"
       class="button"
-      hx-get="/assistants/{assistant_id}/messages/send"
+      hx-post="/assistants/{assistant_id}/messages/send"
       hx-target="#messages"
       hx-swap="beforeEnd"
       {% if inputDisabled %}disabled{% endif %}
