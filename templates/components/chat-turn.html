@@ -1,0 +1,8 @@
+<div class="userMessage">{{ userInput }}</div>
+<div
+    class="assistantMessage"
+    hx-ext="sse" 
+    sse-connect="/assistants/{{ assistant_id }}/messages/receive"
+    sse-swap="message"
+    hx-swap="beforeend"
+></div>

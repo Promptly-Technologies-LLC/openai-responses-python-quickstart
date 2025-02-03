@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from routers import files, messages, tools, api_keys, assistants
+from utils.threads import create_thread
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -55,17 +56,23 @@ async def read_home(request: Request):
         }
     )
 
+# TODO: Implement some kind of thread id storage or management logic to allow
+# user to load an old thread, delete an old thread, etc. instead of start new
 @app.get("/basic-chat")
 async def read_basic_chat(request: Request, messages: list = [], thread_id: str = None):
     # Get assistant ID from environment variables
     load_dotenv()
     assistant_id = os.getenv("ASSISTANT_ID")
+
+    # Create a new assistant chat thread if no thread ID is provided
+    if not thread_id or thread_id == "None" or thread_id == "null":
+        thread_id: str = await create_thread()
     
     return templates.TemplateResponse(
         "examples/basic-chat.html",
         {
             "request": request,
-            "assistant_id": assistant_id,  # Add assistant_id to template context
+            "assistant_id": assistant_id,
             "messages": messages,
             "thread_id": thread_id
         }
@@ -76,6 +83,10 @@ async def read_file_search(request: Request, messages: list = [], thread_id: str
     # Get assistant ID from environment variables
     load_dotenv()
     assistant_id = os.getenv("ASSISTANT_ID")
+
+    # Create a new assistant chat thread if no thread ID is provided
+    if not thread_id or thread_id == "None" or thread_id == "null":
+        thread_id: str = await create_thread()
     
     return templates.TemplateResponse(
         "examples/file-search.html",
@@ -92,6 +103,10 @@ async def read_function_calling(request: Request, messages: list = [], thread_id
     # Get assistant ID from environment variables
     load_dotenv()
     assistant_id = os.getenv("ASSISTANT_ID")
+
+    # Create a new assistant chat thread if no thread ID is provided
+    if not thread_id or thread_id == "None" or thread_id == "null":
+        thread_id: str = await create_thread()
     
     # Define the condition class map
     conditionClassMap = {
@@ -122,6 +137,10 @@ async def read_all(request: Request, messages: list = [], thread_id: str = None)
     # Get assistant ID from environment variables
     load_dotenv()
     assistant_id = os.getenv("ASSISTANT_ID")
+
+    # Create a new assistant chat thread if no thread ID is provided
+    if not thread_id or thread_id == "None" or thread_id == "null":
+        thread_id: str = await create_thread()
     
     return templates.TemplateResponse(
         "examples/all.html",
