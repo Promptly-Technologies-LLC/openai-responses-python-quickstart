@@ -9,9 +9,14 @@ import json
 from utils.threads import create_thread
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
+logger.setLevel(logging.DEBUG)
 
 # Initialize the router
-router: APIRouter = APIRouter()
+router: APIRouter = APIRouter(
+    prefix="/assistants/{assistant_id}/messages",
+    tags=["assistants_messages"]
+)
+
 
 # Send a new message to a thread
 @router.post("/send_message")

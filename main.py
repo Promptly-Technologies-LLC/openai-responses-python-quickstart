@@ -57,10 +57,15 @@ async def read_home(request: Request):
 
 @app.get("/basic-chat")
 async def read_basic_chat(request: Request, messages: list = [], thread_id: str = None):
+    # Get assistant ID from environment variables
+    load_dotenv()
+    assistant_id = os.getenv("ASSISTANT_ID")
+    
     return templates.TemplateResponse(
         "examples/basic-chat.html",
         {
             "request": request,
+            "assistant_id": assistant_id,  # Add assistant_id to template context
             "messages": messages,
             "thread_id": thread_id
         }
@@ -68,17 +73,26 @@ async def read_basic_chat(request: Request, messages: list = [], thread_id: str 
 
 @app.get("/file-search")
 async def read_file_search(request: Request, messages: list = [], thread_id: str = None):
+    # Get assistant ID from environment variables
+    load_dotenv()
+    assistant_id = os.getenv("ASSISTANT_ID")
+    
     return templates.TemplateResponse(
         "examples/file-search.html",
         {
             "request": request,
             "messages": messages,
             "thread_id": thread_id,
+            "assistant_id": assistant_id,  # Add assistant_id to template context
         }
     )
 
 @app.get("/function-calling")
 async def read_function_calling(request: Request, messages: list = [], thread_id: str = None):
+    # Get assistant ID from environment variables
+    load_dotenv()
+    assistant_id = os.getenv("ASSISTANT_ID")
+    
     # Define the condition class map
     conditionClassMap = {
         "Cloudy": "weatherBGCloudy",
@@ -97,16 +111,23 @@ async def read_function_calling(request: Request, messages: list = [], thread_id
             "conditions": "Sunny",
             "isEmpty": True,
             "thread_id": thread_id,
-            "messages": messages
+            "messages": messages,
+            "assistant_id": assistant_id,  # Add assistant_id to template context
         }
     )
 
+
 @app.get("/all")
 async def read_all(request: Request, messages: list = [], thread_id: str = None):
+    # Get assistant ID from environment variables
+    load_dotenv()
+    assistant_id = os.getenv("ASSISTANT_ID")
+    
     return templates.TemplateResponse(
         "examples/all.html",
         {
             "request": request,
+            "assistant_id": assistant_id,  # Add assistant_id to template context
             "thread_id": thread_id,
             "messages": messages
         }

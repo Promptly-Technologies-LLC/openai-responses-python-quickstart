@@ -12,7 +12,10 @@ logger = logging.getLogger("uvicorn.error")
 load_dotenv()
 assistant_id: str = os.getenv("ASSISTANT_ID")
 
-router: APIRouter = APIRouter(prefix="/assistants/{assistant_id}/files", tags=["assistants_files"])
+router: APIRouter = APIRouter(
+    prefix="/assistants/{assistant_id}/files",
+    tags=["assistants_files"]
+)
 
 # Pydantic model for DELETE request body
 class DeleteRequest(BaseModel):
@@ -40,12 +43,10 @@ async def get_or_create_vector_store(assistantId: str, client: AsyncOpenAI = Dep
 
 
 @router.get("/files/{file_id}")
-async def get_file(file_id: str, client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())):
-    """
-    Endpoint to download a file by file ID.
-    """
+async def get_file(file_id: str):
     try:
         # Retrieve file metadata and content concurrently
+        client = AsyncOpenAI()
         file, file_content = await client.files.retrieve(file_id), await client.files.content(file_id)
         
         # Return the file content as a streaming response
@@ -59,19 +60,28 @@ async def get_file(file_id: str, client: AsyncOpenAI = Depends(lambda: AsyncOpen
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...), client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())):
-    # Process file and upload to OpenAI
-    vector_store_id = await get_or_create_vector_store(assistant_id, client)
-    openai_file = await client.files.create(
-        file=file.file,
-        purpose="assistants"
-    )
-    await client.beta.vectorStores.files.create(vector_store_id, {
-        "file_id": openai_file.id
-    })
-    return {"message": "File uploaded successfully"}
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        client = AsyncOpenAI()
 
-@router.get("/files")
+        # Handles multiple files through the form
+        # Process file and upload to OpenAI
+        vector_store_id = await get_or_create_vector_store(assistant_id)
+
+        openai_file = await client.files.create(
+            file=file.file,
+            purpose="assistants"
+        )
+        await client.beta.vectorStores.files.create(vector_store_id, {
+            "file_id": openai_file.id
+        })
+        return {"message": "File uploaded successfully"}
+    except Exception as e:
+        # Handle exceptions and return an HTTP error response
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("")
 async def list_files(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())):
     # List files in the vector store
     vector_store_id = await get_or_create_vector_store(assistant_id, client)
