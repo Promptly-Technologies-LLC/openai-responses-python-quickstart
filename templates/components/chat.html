@@ -18,7 +18,8 @@
       {% endif %}
     {% endfor %}
   </div>
-  <form id="chatForm" class="inputForm clearfix">
+  <form id="chatForm" class="inputForm clearfix"
+        hx-on::after-request="this.reset()">
     <input
       type="text"
       class="input"
