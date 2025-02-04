@@ -59,8 +59,7 @@ async def stream_response(
 
         async with stream as stream_manager:
             async for text in stream_manager.text_deltas:
-                logger.info(text)
-                yield f"data: {text}\n\n"
+                yield f"data: {text.replace('\n', '<br>')}\n\n"
             
             logger.info("Sending end message")
 
