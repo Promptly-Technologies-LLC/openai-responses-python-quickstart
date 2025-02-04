@@ -56,12 +56,16 @@ async def stream_response(
             assistant_id=assistant_id,
             thread_id=thread_id
         )
+
         async with stream as stream_manager:
             async for text in stream_manager.text_deltas:
+                logger.info(text)
                 yield f"data: {text}\n\n"
             
+            logger.info("Sending end message")
+
             # Send a done event when the stream is complete
-            yield f"event: EndMessage\n\n"
+            yield "event: EndMessage\ndata: DONE\n\n"
     
     return StreamingResponse(
         event_generator(),

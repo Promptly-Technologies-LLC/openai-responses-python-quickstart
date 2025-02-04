@@ -158,6 +158,10 @@ pre {
   height: 100%;
 }
 
+.assistantMessage {
+  white-space: pre-wrap;
+}
+
 .fileViewer {
   display: flex;
   flex-direction: column;
