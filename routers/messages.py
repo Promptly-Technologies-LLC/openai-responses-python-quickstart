@@ -52,13 +52,13 @@ async def stream_response(
 ) -> StreamingResponse:   
     # Create a generator to stream the response from the assistant
     async def event_generator():
-        stream: AsyncAssistantStreamManager = client.beta.threads.runs.stream(
+        stream_manager: AsyncAssistantStreamManager = client.beta.threads.runs.stream(
             assistant_id=assistant_id,
             thread_id=thread_id
         )
 
-        async with stream as stream_manager:
-            async for text in stream_manager.text_deltas:
+        async with stream_manager as event_handler:
+            async for text in event_handler.text_deltas:
                 yield f"data: {text.replace('\n', '<br>')}\n\n"
 
             # Send a done event when the stream is complete
