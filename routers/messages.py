@@ -60,8 +60,6 @@ async def stream_response(
         async with stream as stream_manager:
             async for text in stream_manager.text_deltas:
                 yield f"data: {text.replace('\n', '<br>')}\n\n"
-            
-            logger.info("Sending end message")
 
             # Send a done event when the stream is complete
             yield "event: EndMessage\ndata: DONE\n\n"
