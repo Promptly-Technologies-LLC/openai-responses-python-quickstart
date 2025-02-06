@@ -2,13 +2,18 @@ import logging
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AssistantEventHandler
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
+from typing_extensions import override
+from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI, AssistantEventHandler
+from fastapi import APIRouter, Depends, Form
+from typing_extensions import override
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
 
-# Initialize the router
+
 router: APIRouter = APIRouter(
     prefix="/assistants/{assistant_id}/messages/{thread_id}",
     tags=["assistants_messages"]
@@ -16,6 +21,37 @@ router: APIRouter = APIRouter(
 
 # Load Jinja2 templates
 templates = Jinja2Templates(directory="templates")
+
+class CustomEventHandler(AssistantEventHandler):
+    def __init__(self):
+        super().__init__()
+        self.message_content = ""
+
+    @override
+    def on_text_created(self, text) -> None:
+        print(f"\nassistant > ", end="", flush=True)
+
+    @override
+    def on_text_delta(self, delta, snapshot):
+        print(delta.value, end="", flush=True)
+        self.message_content += delta.value
+
+    @override
+    def on_text_done(self, text):
+        print(f"\nassistant > done", flush=True)
+
+    def on_tool_call_created(self, tool_call):
+        print(f"\nassistant > {tool_call.type}\n", flush=True)
+
+    def on_tool_call_delta(self, delta, snapshot):
+        if delta.type == 'code_interpreter':
+            if delta.code_interpreter.input:
+                print(delta.code_interpreter.input, end="", flush=True)
+            if delta.code_interpreter.outputs:
+                print(f"\n\noutput >", flush=True)
+                for output in delta.code_interpreter.outputs:
+                    if output.type == "logs":
+                        print(f"\n{output.logs}", flush=True)
 
 # Send a new message to a thread
 @router.post("/send")
@@ -56,6 +92,8 @@ async def stream_response(
             assistant_id=assistant_id,
             thread_id=thread_id
         )
+
+        event_handler = CustomEventHandler()
 
         async with stream_manager as event_handler:
             async for text in event_handler.text_deltas:
