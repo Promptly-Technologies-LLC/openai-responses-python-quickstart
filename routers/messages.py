@@ -4,14 +4,17 @@ from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI, AssistantEventHandler
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
+from openai.types.beta.threads.runs import RunStep, RunStepDelta
 from typing_extensions import override
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI, AssistantEventHandler
-from fastapi import APIRouter, Depends, Form
-from typing_extensions import override
+from fastapi import APIRouter, Depends, Form, HTTPException
+from pydantic import BaseModel
+from typing import Any
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
+
 
 
 router: APIRouter = APIRouter(
@@ -22,36 +25,51 @@ router: APIRouter = APIRouter(
 # Load Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
+class ToolCallOutputs(BaseModel):
+    tool_outputs: Any
+    runId: str
+
+async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
+    try:
+        # Parse the JSON body into the ToolCallOutputs model
+        tool_call_outputs = ToolCallOutputs(**data)
+
+        # Submit tool outputs stream
+        stream = await client.beta.threads.runs.submit_tool_outputs_stream(
+            thread_id,
+            tool_call_outputs.runId,
+            {"tool_outputs": tool_call_outputs.tool_outputs}
+        )
+
+        # Return the stream as a response
+        return stream.to_readable_stream()
+    except Exception as e:
+        logger.error(f"Error submitting tool outputs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class CustomEventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
-        self.message_content = ""
 
     @override
-    def on_text_created(self, text) -> None:
-        print(f"\nassistant > ", end="", flush=True)
-
-    @override
-    def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
-        self.message_content += delta.value
-
-    @override
-    def on_text_done(self, text):
-        print(f"\nassistant > done", flush=True)
-
     def on_tool_call_created(self, tool_call):
-        print(f"\nassistant > {tool_call.type}\n", flush=True)
+        yield f"<span class='tool-call'>Calling {tool_call.type} tool</span>\n"
 
+    @override
     def on_tool_call_delta(self, delta, snapshot):
         if delta.type == 'code_interpreter':
             if delta.code_interpreter.input:
-                print(delta.code_interpreter.input, end="", flush=True)
+                yield f"<span class='code'>{delta.code_interpreter.input}</span>\n"
             if delta.code_interpreter.outputs:
-                print(f"\n\noutput >", flush=True)
                 for output in delta.code_interpreter.outputs:
                     if output.type == "logs":
-                        print(f"\n{output.logs}", flush=True)
+                        yield f"<span class='console'>{output.logs}</span>\n"
+        if delta.type == "function":
+            yield
+        if delta.type == "file_search":
+            yield
+
 
 # Send a new message to a thread
 @router.post("/send")
