@@ -6,11 +6,14 @@ from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai import AsyncOpenAI
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
-from openai.types.beta.assistant_stream_event import ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted
+from openai.types.beta.assistant_stream_event import ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted, ThreadRunRequiresAction
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
+import json
 
+# Import our get_weather method
+from utils.weather import get_weather
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -30,20 +33,25 @@ class ToolCallOutputs(BaseModel):
     runId: str
 
 async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
+    """
+    data is expected to be something like
 
+    {
+      "tool_outputs": {"location": "City", "temperature": 70, "conditions": "Sunny"},
+      "runId": "some-run-id",
+    }
+    """
     try:
-        # Parse the JSON body into the ToolCallOutputs model
-        tool_call_outputs = ToolCallOutputs(**data)
+        outputs_list = [data["tool_outputs"]]
 
-        # Submit tool outputs stream
-        stream = await client.beta.threads.runs.submit_tool_outputs_stream(
-            thread_id,
-            tool_call_outputs.runId,
-            {"tool_outputs": tool_call_outputs.tool_outputs}
+        stream_manager = client.beta.threads.runs.submit_tool_outputs_stream(
+            thread_id=thread_id,
+            run_id=data["runId"],
+            tool_outputs=outputs_list,
         )
 
-        # Return the stream as a response
-        return stream.to_readable_stream()
+        return stream_manager
+
     except Exception as e:
         logger.error(f"Error submitting tool outputs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -119,6 +127,34 @@ async def stream_response(
                         f"event: textDelta{step_counter}\n"
                         f"data: {event.data.delta.content[0].text.value}\n\n"
                     )
+
+                if isinstance(event, ThreadRunRequiresAction):
+                    required_action = event.data.required_action
+                    if required_action and required_action.submit_tool_outputs:
+                        for tool_call in required_action.submit_tool_outputs.tool_calls:
+                            yield (
+                                f"event: toolCallCreated\n"
+                                f"data: {templates.get_template('components/assistant-step.html').render(
+                                    step_type='toolCall', stream_name=f'toolDelta{step_counter}'
+                                ).replace('\n', '')}\n\n"
+                            )
+
+                            if tool_call.type == "function" and tool_call.function.name == "get_weather":
+                                try:
+                                    args = json.loads(tool_call.function.arguments)
+                                    location = args.get("location", "Unknown")
+                                except Exception as err:
+                                    logger.error(f"Failed to parse function arguments: {err}")
+                                    location = "Unknown"
+
+                                weather_output = get_weather(location)
+                                logger.info(f"Weather output: {weather_output}")
+
+                                data_for_tool = {
+                                    "tool_outputs": weather_output,
+                                    "runId": event.data.id,
+                                }
+                                await post_tool_outputs(client, data_for_tool, thread_id)
 
                 if isinstance(event, ThreadRunCompleted):
                     yield "event: endStream\ndata: DONE\n\n"
