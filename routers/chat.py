@@ -10,10 +10,12 @@ from openai.types.beta.assistant_stream_event import (
     ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted,
     ThreadRunRequiresAction, ThreadRunStepCreated, ThreadRunStepDelta
 )
+from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
 from openai.types.beta.threads.run import RequiredAction
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
+
 import json
 
 from utils.weather import get_weather
@@ -39,14 +41,22 @@ class ToolCallOutputs(BaseModel):
 async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
     """
     data is expected to be something like
-
     {
-      "tool_outputs": {"location": "City", "temperature": 70, "conditions": "Sunny"},
+      "tool_outputs": {
+        "output": {"location": "City", "temperature": 70, "conditions": "Sunny"},
+        "tool_call_id": "call_123"
+      },
       "runId": "some-run-id",
     }
     """
     try:
-        outputs_list = [data["tool_outputs"]]
+        outputs_list = [
+            ToolOutput(
+                output=data["tool_outputs"]["output"],
+                tool_call_id=data["tool_outputs"]["tool_call_id"]
+            )
+        ]
+
 
         stream_manager = client.beta.threads.runs.submit_tool_outputs_stream(
             thread_id=thread_id,
@@ -227,10 +237,13 @@ async def stream_response(
                                 logger.info(f"Weather output: {weather_output}")
 
                                 data_for_tool = {
-                                    "tool_outputs": weather_output,
-                                    "runId": event.data.id,
+                                    "tool_outputs": {
+                                        "output": str(weather_output),
+                                        "tool_call_id": tool_call.id
+                                    },
+                                    "runId": run_requires_action_event.data.id,
                                 }
-                        
+
                         # Afterwards, create a fresh stream_manager for the next iteration
                         new_stream_manager: AsyncAssistantStreamManager = await post_tool_outputs(
                             client,
