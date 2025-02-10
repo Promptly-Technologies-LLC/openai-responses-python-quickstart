@@ -20,30 +20,13 @@ router: APIRouter = APIRouter(
     tags=["assistants_messages"]
 )
 
-# Load Jinja2 templates
+# Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
+# Utility function for submitting tool outputs to the assistant
 class ToolCallOutputs(BaseModel):
     tool_outputs: Any
     runId: str
-
-user_message_html = (
-    "<div class=\"chat-turn\" hx-swap=\"beforeend\" "
-    "sse-connect=\"/assistants/{assistant_id}/messages/{thread_id}/receive\" "
-    "sse-swap=\"messageCreated\" "
-    "sse-close=\"endStream\">"
-        "<div class=\"userMessage\">"
-        "{user_input}"
-        "</div>"
-    "</div>"
-)
-
-assistant_step_html = (
-    "<div class=\"{event_type}\" " # assistantMessage or toolCall
-    "sse-swap=\"{event_name}\" " #event_type plus a counter
-    "hx-swap=\"beforeend\">"
-    "</div>"
-)
 
 async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
 
@@ -64,7 +47,11 @@ async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
         logger.error(f"Error submitting tool outputs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# TODO: Handle message created event by rendering assistant-step.html with the
+# event type ("assistantMessage" or "toolCall", in this case "assistantMessage")
+# and name ("assistantMessage" plus a counter)
 
+# Custom event handler for the assistant run stream
 class CustomEventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
@@ -88,7 +75,8 @@ class CustomEventHandler(AssistantEventHandler):
             yield
 
 
-# Send a new message to a thread
+# Route to submit a new user message to a thread and mount a component that
+# will start an assistant run stream
 @router.post("/send")
 async def post_message(
     request: Request,
@@ -105,18 +93,20 @@ async def post_message(
 
     )
 
+    # Render the component templates with the context
+    user_message_html = templates.get_template("user_message.html").render(user_input=userInput)
+    assistant_run_html = templates.get_template("assistant_run.html").render(
+        assistant_id=assistant_id,
+        thread_id=thread_id
+    )
+
     return (
-        user_message_html.format(user_input=userInput) +
-        assistant_step_html.format(
-            event_type="assistantMessage",
-            event_name="message",
-            assistant_id=assistant_id,
-            thread_id=thread_id
-        )
+        user_message_html +
+        assistant_run_html
     )
 
 
-
+# Route to stream the response from the assistant via server-sent events
 @router.get("/receive")
 async def stream_response(
     assistant_id: str,
