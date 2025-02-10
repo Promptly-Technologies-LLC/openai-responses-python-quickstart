@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any
+from typing import Any, AsyncGenerator
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -16,10 +16,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
 import json
 
-
-
-
-# Import our get_weather method
 from utils.weather import get_weather
 from utils.sse import sse_format
 
@@ -104,19 +100,31 @@ async def stream_response(
     thread_id: str,
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
+    """
+    Streams the assistant response via Server-Sent Events (SSE). If the assistant requires
+    a tool call, we capture that action, invoke the tool, and then re-run the stream
+    until completion. This is done in a DRY way by extracting the streaming logic 
+    into a helper function.
+    """
 
-    async def event_generator():
-        step_counter: int = 0
+    async def handle_assistant_stream(
+        templates: Jinja2Templates,
+        logger: logging.Logger,
+        stream_manager: AsyncAssistantStreamManager,
+        start_step_count: int = 0
+    ) -> AsyncGenerator:
+        """
+        Async generator to yield SSE events.
+        We yield a final 'metadata' dictionary event once we're done.
+        """
+        step_counter: int = start_step_count
         required_action: RequiredAction | None = None
-        stream_manager: AsyncAssistantStreamManager = client.beta.threads.runs.stream(
-            assistant_id=assistant_id,
-            thread_id=thread_id
-        )
+        run_requires_action_event: ThreadRunRequiresAction | None = None
 
         async with stream_manager as event_handler:
             async for event in event_handler:
                 logger.info(f"{event}")
-                
+
                 if isinstance(event, ThreadMessageCreated):
                     step_counter += 1
 
@@ -127,7 +135,7 @@ async def stream_response(
                             stream_name=f"textDelta{step_counter}"
                         )
                     )
-                    time.sleep(0.25) # Give the client time to render the message
+                    time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadMessageDelta):
                     logger.info(f"Sending delta with name textDelta{step_counter}")
@@ -136,20 +144,20 @@ async def stream_response(
                         event.data.delta.content[0].text.value
                     )
 
-
                 if isinstance(event, ThreadRunStepCreated) and event.data.type == "tool_calls":
                     yield sse_format(
                         f"toolCallCreated",
                         templates.get_template('components/assistant-step.html').render(
-                            step_type='toolCall', stream_name=f'toolDelta{step_counter}'
+                            step_type='toolCall',
+                            stream_name=f'toolDelta{step_counter}'
                         )
                     )
 
-                if isinstance(event, ThreadRunStepDelta) and event.data.type == "tool_calls":
+                if isinstance(event, ThreadRunStepDelta) and event.data.delta.step_details.type == "tool_calls":
                     if event.data.delta.step_details.tool_calls[0].function.name:
                         yield sse_format(
                             f"toolDelta{step_counter}",
-                            event.data.delta.step_details.tool_calls[0].function.name + "\n"
+                            event.data.delta.step_details.tool_calls[0].function.name + "<br>"
                         )
                     elif event.data.delta.step_details.tool_calls[0].function.arguments:
                         yield sse_format(
@@ -157,35 +165,87 @@ async def stream_response(
                             event.data.delta.step_details.tool_calls[0].function.arguments
                         )
 
+                # If the assistant run requires an action (a tool call), break and handle it
                 if isinstance(event, ThreadRunRequiresAction):
                     required_action = event.data.required_action
-                    if required_action and required_action.submit_tool_outputs:
-                        # Exit the for loop and context manager
+                    run_requires_action_event = event
+                    if required_action.submit_tool_outputs:
                         break
 
                 if isinstance(event, ThreadRunCompleted):
                     yield sse_format("endStream", "DONE")
-    
-        if required_action and required_action.submit_tool_outputs:
-            # Get the weather
-            for tool_call in required_action.submit_tool_outputs.tool_calls:
-                try:
-                    args = json.loads(tool_call.function.arguments)
-                    location = args.get("location", "Unknown")
-                except Exception as err:
-                    logger.error(f"Failed to parse function arguments: {err}")
-                    location = "Unknown"
 
-            weather_output = get_weather(location)
-            logger.info(f"Weather output: {weather_output}")
+        # At the end (or break) of this async generator, we yield a final "metadata" object
+        yield {
+            "type": "metadata",
+            "required_action": required_action,
+            "step_counter": step_counter,
+            "run_requires_action_event": run_requires_action_event
+        }
 
-            data_for_tool = {
-                "tool_outputs": weather_output,
-                "runId": event.data.id,
-            }
-            stream_manager: AsyncAssistantStreamManager = await post_tool_outputs(client, data_for_tool, thread_id)
-        
-            # We here need to run the whole stream management loop again
+    async def event_generator():
+        """
+        Main generator for SSE events. We call our helper function to handle the assistant
+        stream, and if the assistant requests a tool call, we do it and then re-run the stream.
+        """
+        step_counter = 0
+        # First run of the assistant stream
+        initial_manager = client.beta.threads.runs.stream(
+            assistant_id=assistant_id,
+            thread_id=thread_id
+        )
+
+        # We'll re-run the loop if needed for tool calls
+        stream_manager = initial_manager
+        while True:  
+            async for event in handle_assistant_stream(templates, logger, stream_manager, step_counter):
+                # Detect the special "metadata" event at the end of the generator
+                if isinstance(event, dict) and event.get("type") == "metadata":
+                    required_action: RequiredAction | None = event["required_action"]
+                    step_counter: int = event["step_counter"]
+                    run_requires_action_event: ThreadRunRequiresAction | None = event["run_requires_action_event"]
+
+                    # If the assistant still needs a tool call, do it and then re-stream
+                    if required_action and required_action.submit_tool_outputs:
+                        for tool_call in required_action.submit_tool_outputs.tool_calls:
+                            yield (
+                                f"event: toolCallCreated\n"
+                                f"data: {templates.get_template('components/assistant-step.html').render(
+                                    step_type='toolCall', stream_name=f'toolDelta{step_counter}'
+                                ).replace('\n', '')}\n\n"
+                            )
+
+                            if tool_call.type == "function" and tool_call.function.name == "get_weather":
+                                try:
+                                    args = json.loads(tool_call.function.arguments)
+                                    location = args.get("location", "Unknown")
+                                except Exception as err:
+                                    logger.error(f"Failed to parse function arguments: {err}")
+                                    location = "Unknown"
+
+                                weather_output = get_weather(location)
+                                logger.info(f"Weather output: {weather_output}")
+
+                                data_for_tool = {
+                                    "tool_outputs": weather_output,
+                                    "runId": event.data.id,
+                                }
+                        
+                        # Afterwards, create a fresh stream_manager for the next iteration
+                        new_stream_manager: AsyncAssistantStreamManager = await post_tool_outputs(
+                            client,
+                            data_for_tool,
+                            thread_id
+                        )
+                        stream_manager = new_stream_manager
+                        # proceed to rerun the loop
+                        break
+                    else:
+                        # No more tool calls needed; we're done streaming
+                        return
+                else:
+                    # Normal SSE events: yield them to the client
+                    yield event
 
     return StreamingResponse(
         event_generator(),
