@@ -1,7 +1,7 @@
 import logging
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from openai import AsyncOpenAI, AssistantEventHandler
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
 from openai.types.beta.threads.runs import RunStep, RunStepDelta
@@ -78,31 +78,32 @@ class CustomEventHandler(AssistantEventHandler):
 # Route to submit a new user message to a thread and mount a component that
 # will start an assistant run stream
 @router.post("/send")
-async def post_message(
+async def send_message(
     request: Request,
     assistant_id: str,
     thread_id: str,
     userInput: str = Form(...),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
-) -> dict:
+) -> HTMLResponse:
     # Create a new message in the thread
     await client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
         content=userInput
-
     )
 
     # Render the component templates with the context
-    user_message_html = templates.get_template("user_message.html").render(user_input=userInput)
-    assistant_run_html = templates.get_template("assistant_run.html").render(
+    user_message_html = templates.get_template("components/user-message.html").render(user_input=userInput)
+    assistant_run_html = templates.get_template("components/assistant-run.html").render(
         assistant_id=assistant_id,
         thread_id=thread_id
     )
 
-    return (
-        user_message_html +
-        assistant_run_html
+    return HTMLResponse(
+        content=(
+            user_message_html +
+            assistant_run_html
+        )
     )
 
 
@@ -124,7 +125,7 @@ async def stream_response(
 
         async with stream_manager as event_handler:
             async for text in event_handler.text_deltas:
-                yield f"data: {text.replace('\n', '<br>')}\n\n"
+                yield f"data: {text.replace('\n', '&#10;')}\n\n"
 
             # Send a done event when the stream is complete
             yield "event: EndMessage\ndata: DONE\n\n"

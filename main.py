@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
-from routers import files, messages, tools, api_keys, assistants
+from routers import chat, files, api_keys, assistants
 from utils.threads import create_thread
 
 
@@ -21,9 +21,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Mount routers
-app.include_router(messages.router)
+app.include_router(chat.router)
 app.include_router(files.router)
-app.include_router(tools.router)
 app.include_router(api_keys.router)
 app.include_router(assistants.router)
 
@@ -36,7 +35,7 @@ templates = Jinja2Templates(directory="templates")
 # TODO: Implement some kind of thread id storage or management logic to allow
 # user to load an old thread, delete an old thread, etc. instead of start new
 @app.get("/")
-async def read_home(request: Request):
+async def read_home(request: Request, thread_id: str = None, messages: list = []):
     logger.info("Home page requested")
     
     # Check if environment variables are missing
