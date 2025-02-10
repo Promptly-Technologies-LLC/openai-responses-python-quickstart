@@ -33,6 +33,8 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")),
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
 
+# TODO: Implement some kind of thread id storage or management logic to allow
+# user to load an old thread, delete an old thread, etc. instead of start new
 @app.get("/")
 async def read_home(request: Request):
     logger.info("Home page requested")
@@ -42,115 +44,20 @@ async def read_home(request: Request):
     if not os.getenv("OPENAI_API_KEY") or not os.getenv("ASSISTANT_ID"):
         return RedirectResponse(url="/setup")
     
-    categories = {
-        "Basic chat": "basic-chat",
-        "File search": "file-search",
-        "Function calling": "function-calling",
-        "All": "all",
-    }
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "categories": categories
-        }
-    )
-
-# TODO: Implement some kind of thread id storage or management logic to allow
-# user to load an old thread, delete an old thread, etc. instead of start new
-@app.get("/basic-chat")
-async def read_basic_chat(request: Request, messages: list = [], thread_id: str = None):
-    # Get assistant ID from environment variables
-    load_dotenv()
-    assistant_id = os.getenv("ASSISTANT_ID")
-
     # Create a new assistant chat thread if no thread ID is provided
     if not thread_id or thread_id == "None" or thread_id == "null":
         thread_id: str = await create_thread()
     
     return templates.TemplateResponse(
-        "examples/basic-chat.html",
+        "index.html",
         {
             "request": request,
-            "assistant_id": assistant_id,
+            "assistant_id": os.getenv("ASSISTANT_ID"),
             "messages": messages,
             "thread_id": thread_id
         }
     )
 
-@app.get("/file-search")
-async def read_file_search(request: Request, messages: list = [], thread_id: str = None):
-    # Get assistant ID from environment variables
-    load_dotenv()
-    assistant_id = os.getenv("ASSISTANT_ID")
-
-    # Create a new assistant chat thread if no thread ID is provided
-    if not thread_id or thread_id == "None" or thread_id == "null":
-        thread_id: str = await create_thread()
-    
-    return templates.TemplateResponse(
-        "examples/file-search.html",
-        {
-            "request": request,
-            "messages": messages,
-            "thread_id": thread_id,
-            "assistant_id": assistant_id,  # Add assistant_id to template context
-        }
-    )
-
-@app.get("/function-calling")
-async def read_function_calling(request: Request, messages: list = [], thread_id: str = None):
-    # Get assistant ID from environment variables
-    load_dotenv()
-    assistant_id = os.getenv("ASSISTANT_ID")
-
-    # Create a new assistant chat thread if no thread ID is provided
-    if not thread_id or thread_id == "None" or thread_id == "null":
-        thread_id: str = await create_thread()
-    
-    # Define the condition class map
-    conditionClassMap = {
-        "Cloudy": "weatherBGCloudy",
-        "Sunny": "weatherBGSunny",
-        "Rainy": "weatherBGRainy",
-        "Snowy": "weatherBGSnowy",
-        "Windy": "weatherBGWindy",
-    }
-    
-    return templates.TemplateResponse(
-        "examples/function-calling.html", 
-        {
-            "conditionClassMap": conditionClassMap,
-            "location": "---",
-            "temperature": "---",
-            "conditions": "Sunny",
-            "isEmpty": True,
-            "thread_id": thread_id,
-            "messages": messages,
-            "assistant_id": assistant_id,  # Add assistant_id to template context
-        }
-    )
-
-
-@app.get("/all")
-async def read_all(request: Request, messages: list = [], thread_id: str = None):
-    # Get assistant ID from environment variables
-    load_dotenv()
-    assistant_id = os.getenv("ASSISTANT_ID")
-
-    # Create a new assistant chat thread if no thread ID is provided
-    if not thread_id or thread_id == "None" or thread_id == "null":
-        thread_id: str = await create_thread()
-    
-    return templates.TemplateResponse(
-        "examples/all.html",
-        {
-            "request": request,
-            "assistant_id": assistant_id,  # Add assistant_id to template context
-            "thread_id": thread_id,
-            "messages": messages
-        }
-    )
 
 # Add new setup route
 @app.get("/setup")

@@ -1,7 +1,7 @@
 [project]
 name = "openai-assistants-python-quickstart"
 version = "0.1.0"
-description = "Add your description here"
+description = "A quickstart template using the OpenAI Assistants API with Python, FastAPI, Jinja2, and HTMX"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
