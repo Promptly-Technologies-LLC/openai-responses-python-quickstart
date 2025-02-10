@@ -15,8 +15,6 @@ from typing import Any
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
 
-
-
 router: APIRouter = APIRouter(
     prefix="/assistants/{assistant_id}/messages/{thread_id}",
     tags=["assistants_messages"]
@@ -29,7 +27,26 @@ class ToolCallOutputs(BaseModel):
     tool_outputs: Any
     runId: str
 
+user_message_html = (
+    "<div class=\"chat-turn\" hx-swap=\"beforeend\" "
+    "sse-connect=\"/assistants/{assistant_id}/messages/{thread_id}/receive\" "
+    "sse-swap=\"messageCreated\" "
+    "sse-close=\"endStream\">"
+        "<div class=\"userMessage\">"
+        "{user_input}"
+        "</div>"
+    "</div>"
+)
+
+assistant_step_html = (
+    "<div class=\"{event_type}\" " # assistantMessage or toolCall
+    "sse-swap=\"{event_name}\" " #event_type plus a counter
+    "hx-swap=\"beforeend\">"
+    "</div>"
+)
+
 async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
+
     try:
         # Parse the JSON body into the ToolCallOutputs model
         tool_call_outputs = ToolCallOutputs(**data)
@@ -88,15 +105,17 @@ async def post_message(
 
     )
 
-    return templates.TemplateResponse(
-        "components/chat-turn.html",
-        {
-            "request": request,
-            "user_input": userInput,
-            "assistant_id": assistant_id,
-            "thread_id": thread_id
-        }
+    return (
+        user_message_html.format(user_input=userInput) +
+        assistant_step_html.format(
+            event_type="assistantMessage",
+            event_name="message",
+            assistant_id=assistant_id,
+            thread_id=thread_id
+        )
     )
+
+
 
 @router.get("/receive")
 async def stream_response(
