@@ -1,19 +1,20 @@
 import logging
+import time
+from typing import Any
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
-from openai import AsyncOpenAI, AssistantEventHandler
+from openai import AsyncOpenAI
 from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
-from openai.types.beta.threads.runs import RunStep, RunStepDelta
-from typing_extensions import override
+from openai.types.beta.assistant_stream_event import ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted
 from fastapi.responses import StreamingResponse
-from openai import AsyncOpenAI, AssistantEventHandler
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
-from typing import Any
+
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
+
 
 router: APIRouter = APIRouter(
     prefix="/assistants/{assistant_id}/messages/{thread_id}",
@@ -46,33 +47,6 @@ async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
     except Exception as e:
         logger.error(f"Error submitting tool outputs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# TODO: Handle message created event by rendering assistant-step.html with the
-# event type ("assistantMessage" or "toolCall", in this case "assistantMessage")
-# and name ("assistantMessage" plus a counter)
-
-# Custom event handler for the assistant run stream
-class CustomEventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-
-    @override
-    def on_tool_call_created(self, tool_call):
-        yield f"<span class='tool-call'>Calling {tool_call.type} tool</span>\n"
-
-    @override
-    def on_tool_call_delta(self, delta, snapshot):
-        if delta.type == 'code_interpreter':
-            if delta.code_interpreter.input:
-                yield f"<span class='code'>{delta.code_interpreter.input}</span>\n"
-            if delta.code_interpreter.outputs:
-                for output in delta.code_interpreter.outputs:
-                    if output.type == "logs":
-                        yield f"<span class='console'>{output.logs}</span>\n"
-        if delta.type == "function":
-            yield
-        if delta.type == "file_search":
-            yield
 
 
 # Route to submit a new user message to a thread and mount a component that
@@ -114,22 +88,45 @@ async def stream_response(
     thread_id: str,
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:   
+    
     # Create a generator to stream the response from the assistant
     async def event_generator():
+        step_counter: int = 0
         stream_manager: AsyncAssistantStreamManager = client.beta.threads.runs.stream(
             assistant_id=assistant_id,
             thread_id=thread_id
         )
 
-        event_handler = CustomEventHandler()
-
         async with stream_manager as event_handler:
-            async for text in event_handler.text_deltas:
-                yield f"data: {text.replace('\n', '&#10;')}\n\n"
+            async for event in event_handler:
+                logger.info(f"{event}")
+                
+                if isinstance(event, ThreadMessageCreated):
+                    step_counter += 1
+
+                    yield (
+                        f"event: messageCreated\n"
+                        f"data: {templates.get_template("components/assistant-step.html").render(
+                            step_type=f"assistantMessage",
+                            stream_name=f"textDelta{step_counter}"
+                        ).replace("\n", "")}\n\n"
+                    )
+                    time.sleep(0.25) # Give the client time to render the message
+
+                if isinstance(event, ThreadMessageDelta):
+                    logger.info(f"Sending delta with name textDelta{step_counter}")
+                    yield (
+                        f"event: textDelta{step_counter}\n"
+                        f"data: {event.data.delta.content[0].text.value}\n\n"
+                    )
+
+                if isinstance(event, ThreadRunCompleted):
+                    yield "event: endStream\ndata: DONE\n\n"
 
             # Send a done event when the stream is complete
-            yield "event: EndMessage\ndata: DONE\n\n"
+            yield "event: endStream\ndata: DONE\n\n"
     
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
