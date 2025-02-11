@@ -1,51 +1,48 @@
+<!-- setup.html -->
 {% extends "layout.html" %}
 
 {% block content %}
-<main class="main">
-    <div class="container">
         <div class="setupContainer">
-            <h1 class="title">Setup Required</h1>
+          <h1 class="title">Setup Required</h1>
             
-            {% if "API key" in message %}
-                <div class="setupForm">
-                    <p class="setupMessage">Please enter your OpenAI API key to continue:</p>
-                    <form action="/api-keys/set" method="POST">
-                        <div class="inputWrapper">
-                            <input 
-                                type="password"
-                                name="api_key"
-                                placeholder="sk-..."
-                                required
-                                class="input"
-                            >
-                        </div>
-                        <button 
-                            type="submit"
-                            class="button"
-                        >
-                            Save API Key
-                        </button>
-                    </form>
-                </div>
-            {% elif "Assistant ID" in message %}
-                <div class="setupForm">
-                    <p class="setupMessage">You need to create an assistant to continue:</p>
-                    <form action="/assistants/create-update" method="POST">
-                        <button 
-                            type="submit"
-                            class="button"
-                        >
-                            Create Assistant
-                        </button>
-                    </form>
-                </div>
-            {% elif message == "All set up!" %}
-                <div class="setupForm">
-                    <p class="setupMessage">Your application is already configured and ready to use.</p>
-                    <a href="/" class="button">Return to Home</a>
-                </div>
-            {% endif %}
+          {% if "API key" in message %}
+            <div class="setupForm">
+              <p class="setupMessage">Please enter your OpenAI API key to continue:</p>
+                <form action="/api-keys/set" method="POST">
+                  <div class="inputWrapper">
+                    <input 
+                      type="password"
+                      name="api_key"
+                      placeholder="sk-..."
+                      required
+                      class="input"
+                    >
+                  </div>
+                  <button 
+                    type="submit"
+                    class="button"
+                  >
+                    Save API Key
+                  </button>
+                </form>
+              </div>
+          {% elif "Assistant ID" in message %}
+              <div class="setupForm">
+                <p class="setupMessage">You need to create an assistant to continue:</p>
+                <form action="/assistants/create-update" method="POST">
+                  <button 
+                    type="submit"
+                    class="button"
+                  >
+                    Create Assistant
+                  </button>
+                </form>
+              </div>
+          {% elif message == "All set up!" %}
+              <div class="setupForm">
+                <p class="setupMessage">Your application is already configured and ready to use.</p>
+                <a href="/" class="button">Return to Home</a>
+              </div>
+          {% endif %}
         </div>
-    </div>
-</main>
 {% endblock %}

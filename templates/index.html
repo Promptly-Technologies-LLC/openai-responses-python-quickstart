@@ -1,16 +1,47 @@
-{% extends 'layout.html' %}
+<!-- index.html -->
+{% extends "layout.html" %}
 
 {% block content %}
-  <main class="main">
-    <div class="title">
-      Explore sample apps built with Assistants API
-    </div>
-    <div class="container">
-      {% for name, url in categories.items() %}
-        <a class="category" href="/{{ url }}">
-          {{ name }}
-        </a>
-      {% endfor %}
-    </div>
-  </main>
+        <div class="chatContainer">
+          <div id="messages" class="messages">
+
+            {% for msg in messages %}
+              {% if msg.role == "user" %}
+                <div class="userMessage">{{ msg.text }}</div>
+              {% elif msg.role == "assistant" %}
+                <div class="assistantMessage">
+                  {{ msg.text | safe }}
+                </div>
+              {% elif msg.role == "code" %}
+                <div class="codeMessage">
+                  {% for line in msg.text.split('\n') %}
+                    <div>
+                      <span>{{ loop.index }}. </span>{{ line }}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+          <form id="chatForm" class="inputForm clearfix"
+                hx-on::after-request="this.reset()">
+            <input
+              type="text"
+              class="input"
+              name="userInput"
+              placeholder="Enter your question"
+              id="userInput"
+            />
+            <button
+              type="submit"
+              class="button"
+              hx-post="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/send"
+              hx-target="#messages"
+              hx-swap="beforeend"
+              {% if inputDisabled %}disabled{% endif %}
+            >
+              Send
+            </button>
+          </form>
+        </div>
 {% endblock %}
