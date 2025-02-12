@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 import json
 
-from utils.weather import get_weather
+from utils.custom_functions import get_weather
 from utils.sse import sse_format
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
@@ -164,16 +164,40 @@ async def stream_response(
                     )
 
                 if isinstance(event, ThreadRunStepDelta) and event.data.delta.step_details.type == "tool_calls":
-                    if event.data.delta.step_details.tool_calls[0].function.name:
-                        yield sse_format(
-                            f"toolDelta{step_counter}",
-                            event.data.delta.step_details.tool_calls[0].function.name + "<br>"
-                        )
-                    elif event.data.delta.step_details.tool_calls[0].function.arguments:
-                        yield sse_format(
-                            f"toolDelta{step_counter}",
-                            event.data.delta.step_details.tool_calls[0].function.arguments
-                        )
+                    tool_call = event.data.delta.step_details.tool_calls[0]
+                    
+                    # Handle function tool calls
+                    if tool_call.type == "function":
+                        if tool_call.function.name:
+                            yield sse_format(
+                                f"toolDelta{step_counter}",
+                                tool_call.function.name + "<br>"
+                            )
+                        elif tool_call.function.arguments:
+                            yield sse_format(
+                                f"toolDelta{step_counter}",
+                                tool_call.function.arguments
+                            )
+                    
+                    # Handle code interpreter tool calls
+                    elif tool_call.type == "code_interpreter":
+                        if tool_call.code_interpreter.input:
+                            yield sse_format(
+                                f"toolDelta{step_counter}",
+                                f"{tool_call.code_interpreter.input}"
+                            )
+                        if tool_call.code_interpreter.outputs:
+                            for output in tool_call.code_interpreter.outputs:
+                                if output.type == "logs":
+                                    yield sse_format(
+                                        f"toolDelta{step_counter}",
+                                        f"{output.logs}"
+                                    )
+                                elif output.type == "image":
+                                    yield sse_format(
+                                        f"toolDelta{step_counter}",
+                                        f"{output.image.file_id}"
+                                    )
 
                 # If the assistant run requires an action (a tool call), break and handle it
                 if isinstance(event, ThreadRunRequiresAction):
@@ -218,11 +242,12 @@ async def stream_response(
                     # If the assistant still needs a tool call, do it and then re-stream
                     if required_action and required_action.submit_tool_outputs:
                         for tool_call in required_action.submit_tool_outputs.tool_calls:
-                            yield (
-                                f"event: toolCallCreated\n"
-                                f"data: {templates.get_template('components/assistant-step.html').render(
-                                    step_type='toolCall', stream_name=f'toolDelta{step_counter}'
-                                ).replace('\n', '')}\n\n"
+                            yield sse_format(
+                                "toolCallCreated",
+                                templates.get_template('components/assistant-step.html').render(
+                                    step_type='toolCall',
+                                    stream_name=f'toolDelta{step_counter}'
+                                )
                             )
 
                             if tool_call.type == "function" and tool_call.function.name == "get_weather":
