@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from openai import AsyncOpenAI
 from utils.create_assistant import create_or_update_assistant, request
@@ -34,5 +34,7 @@ async def create_update_assistant(
         request=request,
         logger=logger
     )
+    if not assistant_id:
+        raise HTTPException(status_code=400, detail="Failed to create or update assistant")
 
     return RedirectResponse(url="/", status_code=303)

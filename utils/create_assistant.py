@@ -27,9 +27,17 @@ request: AssistantCreateParams = AssistantCreateParams(
                         "location": {
                             "type": "string",
                             "description": "The city and state e.g. San Francisco, CA"
+                        },
+                        "dates": {
+                            "type": "array",
+                            "description": "The dates (\"YYYY-MM-DD\") to get weather for",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     },
-                    "required": ["location"],
+                    # Currently OpenAI requires that all properties be required
+                    "required": ["location", "dates"],
                     "additionalProperties": False,
                 },
                 strict=True,

@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime
 from typing import Any, AsyncGenerator
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
@@ -43,7 +44,7 @@ async def post_tool_outputs(client: AsyncOpenAI, data: dict, thread_id: str):
     data is expected to be something like
     {
       "tool_outputs": {
-        "output": {"location": "City", "temperature": 70, "conditions": "Sunny"},
+        "output": [{"location": "City", "temperature": 70, "conditions": "Sunny"}],
         "tool_call_id": "call_123"
       },
       "runId": "some-run-id",
@@ -85,7 +86,7 @@ async def send_message(
     await client.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
-        content=userInput
+        content=f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
     )
 
     # Render the component templates with the context
@@ -255,21 +256,19 @@ async def stream_response(
                                 try:
                                     args = json.loads(tool_call.function.arguments)
                                     location = args.get("location", "Unknown")
+                                    dates = args.get("dates", [datetime.today()])
                                 except Exception as err:
                                     logger.error(f"Failed to parse function arguments: {err}")
                                     location = "Unknown"
 
-                                weather_output: dict = get_weather(location)
+                                weather_output: list[dict] = get_weather(location, dates)
                                 logger.info(f"Weather output: {weather_output}")
 
                                 # Render the weather widget
                                 weather_widget_html: str = templates.get_template(
                                     "components/weather-widget.html"
                                 ).render(
-                                    location=weather_output.get("location", "Unknown"),
-                                    temperature=weather_output.get("temperature", "Unknown"),
-                                    unit=weather_output.get("unit", "F"),  # Default to Fahrenheit
-                                    conditions=weather_output.get("conditions", "Unknown")
+                                    reports=weather_output
                                 )
 
                                 # Yield the rendered HTML

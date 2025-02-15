@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from routers import chat, files, api_keys, assistants
 from utils.threads import create_thread
+from fastapi.exceptions import HTTPException
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -31,6 +32,25 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")),
 
 # Initialize Jinja2 templates
 templates = Jinja2Templates(directory="templates")
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {exc}")
+    return templates.TemplateResponse(
+        "error.html",
+        {"request": request, "error_message": str(exc)},
+        status_code=500
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(f"HTTP error: {exc.detail}")
+    return templates.TemplateResponse(
+        "error.html",
+        {"request": request, "error_message": exc.detail},
+        status_code=exc.status_code
+    )
+
 
 # TODO: Implement some kind of thread id storage or management logic to allow
 # user to load an old thread, delete an old thread, etc. instead of start new

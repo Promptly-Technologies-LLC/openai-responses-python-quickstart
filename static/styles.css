@@ -416,7 +416,6 @@ pre {
   display: flex;
   flex-direction: column;
   order: 2;
-  white-space: pre-wrap;
 }
 
 .userMessage,
@@ -505,15 +504,18 @@ pre {
 
 .toolOutput {
   display: flex;
-  flex-direction: row;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 10px;
   border-radius: var(--border-radius);
-  background-color: #f9f9f9;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #a8e6cf 0%, #dcedc1 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   margin-bottom: 10px;
   gap: 10px;
+  width: fit-content;
+  height: fit-content;
+  color: #333;
 }
 
 .toolOutput h2,
@@ -522,6 +524,7 @@ pre {
   padding: 0 10px;
   flex: 1;
   text-align: center;
+  color: #333;
 }
 
 @media (max-width: 600px) {
@@ -535,4 +538,32 @@ pre {
     text-align: left;
     padding: 5px 0;
   }
+}
+
+.error-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.weatherReport {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.weatherContainer {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  justify-content: flex-start;
+}
+
+.location {
+  flex: 0 0 auto;
+}
+
+.reports {
+  flex: 1;
 }
