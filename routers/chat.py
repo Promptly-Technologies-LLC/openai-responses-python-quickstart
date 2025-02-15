@@ -162,6 +162,7 @@ async def stream_response(
                             stream_name=f'toolDelta{step_counter}'
                         )
                     )
+                    time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadRunStepDelta) and event.data.delta.step_details.type == "tool_calls":
                     tool_call = event.data.delta.step_details.tool_calls[0]
@@ -258,8 +259,21 @@ async def stream_response(
                                     logger.error(f"Failed to parse function arguments: {err}")
                                     location = "Unknown"
 
-                                weather_output = get_weather(location)
+                                weather_output: dict = get_weather(location)
                                 logger.info(f"Weather output: {weather_output}")
+
+                                # Render the weather widget
+                                weather_widget_html: str = templates.get_template(
+                                    "components/weather-widget.html"
+                                ).render(
+                                    location=weather_output.get("location", "Unknown"),
+                                    temperature=weather_output.get("temperature", "Unknown"),
+                                    unit=weather_output.get("unit", "F"),  # Default to Fahrenheit
+                                    conditions=weather_output.get("conditions", "Unknown")
+                                )
+
+                                # Yield the rendered HTML
+                                yield sse_format("toolOutput", weather_widget_html)
 
                                 data_for_tool = {
                                     "tool_outputs": {

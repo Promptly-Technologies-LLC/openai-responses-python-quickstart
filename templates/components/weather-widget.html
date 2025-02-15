@@ -1,13 +1,9 @@
 <!-- weather-widget.html -->
-<div class="{{ 'weatherWidget' }} {{ 'weatherEmptyState' if isEmpty else conditionClassMap.get(conditions, 'weatherBGSunny') }}">
-  <div class="weatherWidgetData">
-    {% if isEmpty %}
-      <p>Enter a city to see local weather</p>
-      <p>try: what's the weather like in Berkeley?</p>
-    {% else %}
-      <p>{{ location }}</p>
-      <h2>{{ temperature if temperature != '---' else temperature }}°F</h2>
-      <p>{{ conditions }}</p>
-    {% endif %}
-  </div>
+<div class="toolOutput">
+  <!-- Location -->
+  <h2>{{location}}</h2>
+  <!-- Temperature -->
+  <p>{{temperature}}&deg;{{unit}}</p>
+  <!-- Conditions -->
+  <p>{{conditions}}</p>
 </div>
