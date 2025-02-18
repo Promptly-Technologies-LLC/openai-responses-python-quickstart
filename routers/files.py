@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends, Form
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends, Form, Path
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 
@@ -75,7 +75,10 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @router.get("/{file_id}")
-async def get_file(file_id: str = Form(...), client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())):
+async def get_file(
+    file_id: str = Path(..., description="The ID of the file to retrieve"),
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+):
     try:
         # Retrieve file metadata and content concurrently
         file, file_content = await client.files.retrieve(file_id), await client.files.content(file_id)
@@ -83,7 +86,7 @@ async def get_file(file_id: str = Form(...), client: AsyncOpenAI = Depends(lambd
         # Return the file content as a streaming response
         return StreamingResponse(
             file_content.body,
-            headers={"Content-Disposition": f'attachment; filename="{file.filename}"'}
+            headers={"Content-Disposition": f'attachment; filename=\"{file.filename}\"'}
         )
     except Exception as e:
         # Handle exceptions and return an HTTP error response
