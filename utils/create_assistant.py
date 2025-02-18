@@ -7,6 +7,7 @@ from openai.types.beta.assistant_create_params import AssistantCreateParams
 from openai.types.beta.assistant_tool_param import CodeInterpreterToolParam, FileSearchToolParam, FunctionToolParam
 from openai.types.beta.assistant import Assistant
 from openai.types import FunctionDefinition
+from openai.types.beta.file_search_tool_param import FileSearch
 
 
 request: AssistantCreateParams = AssistantCreateParams(
@@ -15,7 +16,12 @@ request: AssistantCreateParams = AssistantCreateParams(
     model="gpt-4o",
     tools=[
         CodeInterpreterToolParam(type="code_interpreter"),
-        FileSearchToolParam(type="file_search"),
+        FileSearchToolParam(
+            type="file_search",
+            file_search=FileSearch(
+                max_num_results=5
+            )
+        ),
         FunctionToolParam(
             type="function",
             function=FunctionDefinition(
