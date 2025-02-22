@@ -8,7 +8,7 @@
           {% if "API key" in message %}
             <div class="setupForm">
               <p class="setupMessage">Please enter your OpenAI API key to continue:</p>
-                <form action="/api-keys/set" method="POST">
+                <form action="{{ url_for('set_openai_api_key') }}" method="POST">
                   <div class="inputWrapper">
                     <input 
                       type="password"
@@ -29,7 +29,7 @@
           {% elif "Assistant ID" in message %}
               <div class="setupForm">
                 <p class="setupMessage">You need to create an assistant to continue:</p>
-                <form action="/assistants/create-update" method="POST">
+                <form action="{{ url_for('create_update_assistant') }}" method="POST">
                   <button 
                     type="submit"
                     class="button"
@@ -41,7 +41,7 @@
           {% elif message == "All set up!" %}
               <div class="setupForm">
                 <p class="setupMessage">Your application is already configured and ready to use.</p>
-                <a href="/" class="button">Return to Home</a>
+                <a href="{{ url_for('read_home') }}" class="button">Return to Home</a>
               </div>
           {% endif %}
         </div>
