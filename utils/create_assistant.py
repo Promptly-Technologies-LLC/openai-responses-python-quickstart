@@ -1,12 +1,14 @@
 import os
 import logging
 import asyncio
+from typing import cast
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.beta.assistant_create_params import AssistantCreateParams
+from openai.types.beta.assistant_update_params import AssistantUpdateParams
 from openai.types.beta.assistant_tool_param import CodeInterpreterToolParam, FileSearchToolParam, FunctionToolParam
 from openai.types.beta.assistant import Assistant
-from openai.types import FunctionDefinition
+from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.beta.file_search_tool_param import FileSearch
 
 
@@ -42,11 +44,11 @@ request: AssistantCreateParams = AssistantCreateParams(
                             }
                         }
                     },
-                    # Currently OpenAI requires that all properties be required
-                    "required": ["location", "dates"],
+                    "required": ["location"],
                     "additionalProperties": False,
                 },
-                strict=True,
+                # strict=True gives better adherence to the schema, but all arguments must be required
+                strict=False
             )
         ),
     ],
@@ -88,34 +90,37 @@ def update_env_file(var_name: str, var_value: str, logger: logging.Logger):
 
 async def create_or_update_assistant(
         client: AsyncOpenAI,
-        assistant_id: str,
-        request: AssistantCreateParams,
+        assistant_id: str | None,
+        request: AssistantCreateParams | AssistantUpdateParams,
         logger: logging.Logger
 ) -> str:
     """
     Create or update the assistant based on the presence of an assistant_id.
     """
     try:
+        assistant: Assistant
         if assistant_id:
             # Update the existing assistant
-            assistant: Assistant = await client.beta.assistants.update(
+            assistant = await client.beta.assistants.update(
                 assistant_id,
-                **request
+                **cast(AssistantUpdateParams, request)
             )
             logger.info(f"Updated assistant with ID: {assistant_id}")
         else:
             # Create a new assistant
-            assistant: Assistant = await client.beta.assistants.create(**request)
+            assistant = await client.beta.assistants.create(
+                **cast(AssistantCreateParams, request)
+            )
             logger.info(f"Created new assistant: {assistant.id}")
 
             # Update the .env file with the new assistant ID
             update_env_file("ASSISTANT_ID", assistant.id, logger)
-    
-        return assistant.id
 
     except Exception as e:
         action = "update" if assistant_id else "create"
         logger.error(f"Failed to {action} assistant: {e}")
+
+    return assistant.id
 
 
 # Run the assistant creation in an asyncio event loop
@@ -126,8 +131,8 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     logger: logging.Logger = logging.getLogger(__name__)
     
-    load_dotenv()
-    assistant_id = os.getenv("ASSISTANT_ID")
+    load_dotenv(override=True)
+    assistant_id = os.getenv("ASSISTANT_ID", None)
 
     # Initialize the OpenAI client
     openai: AsyncOpenAI = AsyncOpenAI()
