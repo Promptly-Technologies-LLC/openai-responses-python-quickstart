@@ -567,3 +567,12 @@ pre {
 .reports {
   flex: 1;
 }
+
+/* Code Interpreter Image Styles */
+.code-interpreter-image {
+    max-width: 100%;
+    height: auto;
+    margin: 1rem 0;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
