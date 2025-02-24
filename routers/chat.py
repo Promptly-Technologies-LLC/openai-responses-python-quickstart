@@ -2,6 +2,7 @@ import logging
 import time
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
+from dataclasses import dataclass
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -14,7 +15,7 @@ from openai.types.beta.assistant_stream_event import (
 from openai.types.beta import AssistantStreamEvent
 from openai.lib.streaming._assistants import AsyncAssistantEventHandler
 from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
-from openai.types.beta.threads.run import RequiredAction
+from openai.types.beta.threads.run import RequiredAction, Run
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
@@ -23,6 +24,38 @@ import json
 
 from utils.custom_functions import get_weather
 from utils.sse import sse_format
+
+@dataclass
+class AssistantStreamMetadata:
+    """Metadata for assistant stream events that require further processing."""
+    type: str  # Always "metadata"
+    required_action: Optional[RequiredAction]
+    step_id: str
+    run_requires_action_event: Optional[ThreadRunRequiresAction]
+
+    @classmethod
+    def create(cls, 
+               required_action: Optional[RequiredAction],
+               step_id: str,
+               run_requires_action_event: Optional[ThreadRunRequiresAction]
+    ) -> "AssistantStreamMetadata":
+        """Factory method to create a metadata instance with validation."""
+        return cls(
+            type="metadata",
+            required_action=required_action,
+            step_id=step_id,
+            run_requires_action_event=run_requires_action_event
+        )
+
+    def requires_tool_call(self) -> bool:
+        """Check if this metadata indicates a required tool call."""
+        return (self.required_action is not None 
+                and self.required_action.submit_tool_outputs is not None 
+                and bool(self.required_action.submit_tool_outputs.tool_calls))
+
+    def get_run_id(self) -> str:
+        """Get the run ID from the requires action event, or empty string if none."""
+        return self.run_requires_action_event.data.id if self.run_requires_action_event else ""
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -125,10 +158,10 @@ async def stream_response(
         logger: logging.Logger,
         stream_manager: AsyncAssistantStreamManager,
         step_id: str = ""
-    ) -> AsyncGenerator[Union[Dict[str, Any], str], None]:
+    ) -> AsyncGenerator[Union[AssistantStreamMetadata, str], None]:
         """
         Async generator to yield SSE events.
-        We yield a final 'metadata' dictionary event once we're done.
+        We yield a final AssistantStreamMetadata instance once we're done.
         """
         required_action: Optional[RequiredAction] = None
         run_requires_action_event: Optional[ThreadRunRequiresAction] = None
@@ -218,18 +251,17 @@ async def stream_response(
                 if isinstance(event, ThreadRunCompleted):
                     yield sse_format("endStream", "DONE")
 
-        # At the end (or break) of this async generator, we yield a final "metadata" object
-        yield {
-            "type": "metadata",
-            "required_action": required_action,
-            "step_id": step_id,
-            "run_requires_action_event": run_requires_action_event
-        }
+        # At the end (or break) of this async generator, yield a final AssistantStreamMetadata
+        yield AssistantStreamMetadata.create(
+            required_action=required_action,
+            step_id=step_id,
+            run_requires_action_event=run_requires_action_event
+        )
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """
         Main generator for SSE events. We call our helper function to handle the assistant
-        stream, and if the assistant requests a tool call, we do it and then re-run the stream.
+        stream, and if the assistant requests a tool call, we do it and then re-stream the stream.
         """
         step_id: str = ""
         stream_manager: AsyncAssistantStreamManager[AsyncAssistantEventHandler] = client.beta.threads.runs.stream(
@@ -239,17 +271,13 @@ async def stream_response(
         )
 
         while True:
-            event: dict[str, Any] | str
+            event: Union[AssistantStreamMetadata, str]
             async for event in handle_assistant_stream(templates, logger, stream_manager, step_id):
-                # Detect the special "metadata" event at the end of the generator
-                if isinstance(event, dict) and event.get("type") == "metadata":
-                    required_action = cast(Optional[RequiredAction], event.get("required_action"))
-                    step_id = cast(str, event.get("step_id", ""))
-                    run_requires_action_event = cast(Optional[ThreadRunRequiresAction], event.get("run_requires_action_event"))
-
-                    # If the assistant still needs a tool call, do it and then re-stream
-                    if required_action and required_action.submit_tool_outputs and required_action.submit_tool_outputs.tool_calls:
-                        for tool_call in required_action.submit_tool_outputs.tool_calls:
+                if isinstance(event, AssistantStreamMetadata):
+                    # Use the helper methods from our class
+                    step_id = event.step_id
+                    if event.requires_tool_call():
+                        for tool_call in event.required_action.submit_tool_outputs.tool_calls:  # type: ignore
                             if tool_call.type == "function":
                                 try:
                                     args = json.loads(tool_call.function.arguments)
@@ -283,7 +311,7 @@ async def stream_response(
                                             "output": str(weather_output),
                                             "tool_call_id": tool_call.id
                                         },
-                                        "runId": run_requires_action_event.data.id if run_requires_action_event else "",
+                                        "runId": event.get_run_id(),
                                     }
                                 except Exception as err:
                                     error_message = f"Failed to get weather output: {err}"
@@ -294,7 +322,7 @@ async def stream_response(
                                             "output": error_message,
                                             "tool_call_id": tool_call.id
                                         },
-                                        "runId": run_requires_action_event.data.id if run_requires_action_event else "",
+                                        "runId": event.get_run_id(),
                                     }
 
                                 # Afterwards, create a fresh stream_manager for the next iteration
