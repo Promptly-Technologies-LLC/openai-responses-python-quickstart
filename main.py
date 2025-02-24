@@ -1,11 +1,12 @@
 import os
 import logging
+from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from routers import chat, files, setup
 from utils.threads import create_thread
 from fastapi.exceptions import HTTPException
@@ -33,7 +34,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")),
 templates = Jinja2Templates(directory="templates")
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
+async def general_exception_handler(request: Request, exc: Exception) -> Response:
     logger.error(f"Unhandled error: {exc}")
     return templates.TemplateResponse(
         "error.html",
@@ -42,7 +43,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
     logger.error(f"HTTP error: {exc.detail}")
     return templates.TemplateResponse(
         "error.html",
@@ -54,23 +55,30 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 # TODO: Implement some kind of thread id storage or management logic to allow
 # user to load an old thread, delete an old thread, etc. instead of start new
 @app.get("/")
-async def read_home(request: Request, thread_id: str = None, messages: list = []):
+async def read_home(
+    request: Request,
+    thread_id: Optional[str] = None,
+    messages: List[Dict[str, Any]] = []
+) -> Response:
     logger.info("Home page requested")
     
     # Check if environment variables are missing
     load_dotenv(override=True)
-    if not os.getenv("OPENAI_API_KEY") or not os.getenv("ASSISTANT_ID"):
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    assistant_id = os.getenv("ASSISTANT_ID")
+    
+    if not openai_api_key or not assistant_id:
         return RedirectResponse(url=app.url_path_for("read_setup"))
     
     # Create a new assistant chat thread if no thread ID is provided
     if not thread_id or thread_id == "None" or thread_id == "null":
-        thread_id: str = await create_thread()
+        thread_id = await create_thread()
     
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
-            "assistant_id": os.getenv("ASSISTANT_ID"),
+            "assistant_id": assistant_id,
             "messages": messages,
             "thread_id": thread_id
         }
