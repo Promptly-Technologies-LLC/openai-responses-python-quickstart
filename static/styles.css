@@ -618,3 +618,17 @@ pre {
   text-decoration: underline;
 }
 /* --- End Nav --- */
+
+.status-message {
+  margin-bottom: 1rem;
+  font-weight: bold;
+  text-align: center;
+}
+
+.status-message.success {
+  color: green;
+}
+
+.status-message.error {
+  color: red;
+}

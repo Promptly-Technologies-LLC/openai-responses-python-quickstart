@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from openai.types.beta import Assistant
+from urllib.parse import quote
 
 from utils.create_assistant import create_or_update_assistant, ToolTypes
 from utils.create_assistant import update_env_file
@@ -49,16 +50,18 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
 async def read_setup(
     request: Request,
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI()),
-    message: Optional[str] = ""
+    status: Optional[str] = None,
+    message_text: Optional[str] = None
 ) -> Response:
     # Check if assistant ID is missing
     current_tools = []
+    setup_message = "" # Message specific to setup state (e.g., API key missing)
     load_dotenv(override=True)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     assistant_id = os.getenv("ASSISTANT_ID")
     
     if not openai_api_key:
-        message = "OpenAI API key is missing."
+        setup_message = "OpenAI API key is missing."
     else:
         if assistant_id:
             try:
@@ -68,13 +71,15 @@ async def read_setup(
                 logger.error(f"Failed to retrieve assistant {assistant_id}: {e}")
                 # If we can't retrieve the assistant, proceed as if it doesn't exist
                 assistant_id = None
-                message = "Error retrieving existing assistant. Please create a new one."
+                setup_message = "Error retrieving existing assistant. Please create a new one."
     
     return templates.TemplateResponse(
         "setup.html",
         {
             "request": request,
-            "message": message,
+            "setup_message": setup_message,
+            "status": status, # Pass status from query params
+            "status_message": message_text, # Pass message from query params
             "assistant_id": assistant_id,
             "current_tools": current_tools
         }
@@ -91,6 +96,7 @@ async def create_update_assistant(
     Returns the assistant ID and status of the operation.
     """
     current_assistant_id = os.getenv("ASSISTANT_ID")
+    action = "updated" if current_assistant_id else "created"
     new_assistant_id = await create_or_update_assistant(
         client=client,
         assistant_id=current_assistant_id,
@@ -99,6 +105,13 @@ async def create_update_assistant(
     )
     
     if not new_assistant_id:
-        raise HTTPException(status_code=400, detail="Failed to create or update assistant")
-    
-    return RedirectResponse(url="/", status_code=303)
+        status = "error"
+        message_text = f"Failed to {action} assistant."
+    else:
+        status = "success"
+        message_text = f"Assistant {action} successfully."
+        
+    # URL encode the message text
+    encoded_message = quote(message_text)
+    redirect_url = f"/setup/?status={status}&message_text={encoded_message}"
+    return RedirectResponse(url=redirect_url, status_code=303)
