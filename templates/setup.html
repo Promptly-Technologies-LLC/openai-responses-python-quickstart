@@ -3,7 +3,7 @@
 
 {% block content %}
         <div class="setupContainer">
-          <h1 class="title">Setup Required</h1>
+          <h1 class="title">{% if assistant_id %}Update Assistant{% else %}Setup Required{% endif %}</h1>
             
           {% if "API key" in message %}
             <div class="setupForm">
@@ -26,22 +26,31 @@
                   </button>
                 </form>
               </div>
-          {% elif "Assistant ID" in message %}
+          {% else %} {# Covers missing assistant ID or user wants to update #}
               <div class="setupForm">
-                <p class="setupMessage">You need to create an assistant to continue:</p>
+                <p class="setupMessage">Select tools for your assistant:</p>
                 <form action="{{ url_for('create_update_assistant') }}" method="POST">
+                  <div class="checkboxGroup">
+                    <label>
+                      <input type="checkbox" name="tool_types" value="code_interpreter" {% if "code_interpreter" in current_tools %}checked{% endif %}>
+                      Code Interpreter
+                    </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="file_search" {% if "file_search" in current_tools %}checked{% endif %}>
+                      File Search
+                    </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="function" {% if "function" in current_tools %}checked{% endif %}>
+                      Get Weather (Custom Function)
+                    </label>
+                  </div>
                   <button 
                     type="submit"
                     class="button"
                   >
-                    Create Assistant
+                    {% if assistant_id %}Update{% else %}Create{% endif %} Assistant
                   </button>
                 </form>
-              </div>
-          {% elif message == "All set up!" %}
-              <div class="setupForm">
-                <p class="setupMessage">Your application is already configured and ready to use.</p>
-                <a href="{{ url_for('read_home') }}" class="button">Return to Home</a>
               </div>
           {% endif %}
         </div>

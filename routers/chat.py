@@ -1,8 +1,7 @@
 import logging
 import time
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
-from dataclasses import dataclass
+from typing import AsyncGenerator, Optional, Union
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -13,50 +12,18 @@ from openai.types.beta.assistant_stream_event import (
     ThreadRunRequiresAction, ThreadRunStepCreated, ThreadRunStepDelta
 )
 from openai.types.beta import AssistantStreamEvent
-from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
 from openai.types.beta.threads.run import RequiredAction
 from openai.types.beta.threads.message_content_delta import MessageContentDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 from fastapi.responses import StreamingResponse
-from fastapi import APIRouter, Depends, Form, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Form
 
 import json
 
-from utils.custom_functions import get_weather
+from utils.custom_functions import get_weather, post_tool_outputs
 from utils.sse import sse_format
+from utils.streaming import AssistantStreamMetadata
 
-@dataclass
-class AssistantStreamMetadata:
-    """Metadata for assistant stream events that require further processing."""
-    type: str  # Always "metadata"
-    required_action: Optional[RequiredAction]
-    step_id: str
-    run_requires_action_event: Optional[ThreadRunRequiresAction]
-
-    @classmethod
-    def create(cls, 
-               required_action: Optional[RequiredAction],
-               step_id: str,
-               run_requires_action_event: Optional[ThreadRunRequiresAction]
-    ) -> "AssistantStreamMetadata":
-        """Factory method to create a metadata instance with validation."""
-        return cls(
-            type="metadata",
-            required_action=required_action,
-            step_id=step_id,
-            run_requires_action_event=run_requires_action_event
-        )
-
-    def requires_tool_call(self) -> bool:
-        """Check if this metadata indicates a required tool call."""
-        return (self.required_action is not None 
-                and self.required_action.submit_tool_outputs is not None 
-                and bool(self.required_action.submit_tool_outputs.tool_calls))
-
-    def get_run_id(self) -> str:
-        """Get the run ID from the requires action event, or empty string if none."""
-        return self.run_requires_action_event.data.id if self.run_requires_action_event else ""
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -69,43 +36,6 @@ router: APIRouter = APIRouter(
 
 # Jinja2 templates
 templates = Jinja2Templates(directory="templates")
-
-# Utility function for submitting tool outputs to the assistant
-class ToolCallOutputs(BaseModel):
-    tool_outputs: Dict[str, Any]
-    runId: str
-
-async def post_tool_outputs(client: AsyncOpenAI, data: Dict[str, Any], thread_id: str) -> AsyncAssistantStreamManager:
-    """
-    data is expected to be something like
-    {
-      "tool_outputs": {
-        "output": [{"location": "City", "temperature": 70, "conditions": "Sunny"}],
-        "tool_call_id": "call_123"
-      },
-      "runId": "some-run-id",
-    }
-    """
-    try:
-        outputs_list = [
-            ToolOutput(
-                output=str(data["tool_outputs"]["output"]),
-                tool_call_id=data["tool_outputs"]["tool_call_id"]
-            )
-        ]
-
-
-        stream_manager = client.beta.threads.runs.submit_tool_outputs_stream(
-            thread_id=thread_id,
-            run_id=data["runId"],
-            tool_outputs=outputs_list,
-        )
-
-        return stream_manager
-
-    except Exception as e:
-        logger.error(f"Error submitting tool outputs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Route to submit a new user message to a thread and mount a component that

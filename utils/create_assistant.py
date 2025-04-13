@@ -1,60 +1,35 @@
 import os
 import logging
-import asyncio
-from typing import cast
-from dotenv import load_dotenv
+from typing import List, Literal, Union
 from openai import AsyncOpenAI
-from openai.types.beta.assistant_create_params import AssistantCreateParams
-from openai.types.beta.assistant_update_params import AssistantUpdateParams
 from openai.types.beta.code_interpreter_tool_param import CodeInterpreterToolParam
 from openai.types.beta.file_search_tool_param import FileSearchToolParam
-from openai.types.beta.function_tool_param import FunctionToolParam
-from openai.types.beta.assistant import Assistant
-from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.beta.file_search_tool_param import FileSearch
+from openai.types.beta.function_tool_param import FunctionToolParam
+from utils.custom_functions import get_function_tool_param
 
 
-request: AssistantCreateParams = AssistantCreateParams(
-    instructions="You are a helpful assistant.",
-    name="Quickstart Assistant",
-    model="gpt-4o",
-    tools=[
-        CodeInterpreterToolParam(type="code_interpreter"),
-        FileSearchToolParam(
-            type="file_search",
-            file_search=FileSearch(
-                max_num_results=5
+ToolTypes = Literal["code_interpreter", "file_search", "function"]
+ToolParam = Union[CodeInterpreterToolParam, FileSearchToolParam, FunctionToolParam]
+
+
+def get_tool_params(tool_types: List[ToolTypes]) -> List[ToolParam]:
+    """
+    Construct the list of tool parameters based on the selected tool types.
+    """
+    tool_params: List[ToolParam] = []
+    if "code_interpreter" in tool_types:
+        tool_params.append(CodeInterpreterToolParam(type="code_interpreter"))
+    if "file_search" in tool_types:
+        tool_params.append(
+            FileSearchToolParam(
+                type="file_search",
+                file_search=FileSearch(max_num_results=5)
             )
-        ),
-        FunctionToolParam(
-            type="function",
-            function=FunctionDefinition(
-                name="get_weather",
-                description="Determine weather in my location",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state e.g. San Francisco, CA"
-                        },
-                        "dates": {
-                            "type": "array",
-                            "description": "The dates (\"YYYY-MM-DD\") to get weather for",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "required": ["location"],
-                    "additionalProperties": False,
-                },
-                # strict=True gives better adherence to the schema, but all arguments must be required
-                strict=False
-            )
-        ),
-    ],
-)
+        )
+    if "function" in tool_types:
+        tool_params.append(get_function_tool_param())
+    return tool_params
 
 
 def update_env_file(var_name: str, var_value: str, logger: logging.Logger):
@@ -93,7 +68,7 @@ def update_env_file(var_name: str, var_value: str, logger: logging.Logger):
 async def create_or_update_assistant(
         client: AsyncOpenAI,
         assistant_id: str | None,
-        request: AssistantCreateParams | AssistantUpdateParams,
+        tool_types: List[ToolTypes],
         logger: logging.Logger
 ) -> str | None:
     """
@@ -101,17 +76,24 @@ async def create_or_update_assistant(
     """
     assistant = None  # Initialize assistant
     try:
+        tool_params = get_tool_params(tool_types)
         if assistant_id:
             # Update the existing assistant
             assistant = await client.beta.assistants.update(
                 assistant_id,
-                **cast(AssistantUpdateParams, request)
+                instructions="You are a helpful assistant.",
+                name="Quickstart Assistant",
+                model="gpt-4o",
+                tools=tool_params
             )
             logger.info(f"Updated assistant with ID: {assistant_id}")
         else:
             # Create a new assistant
             assistant = await client.beta.assistants.create(
-                **cast(AssistantCreateParams, request)
+                instructions="You are a helpful assistant.",
+                name="Quickstart Assistant",
+                model="gpt-4o",
+                tools=tool_params
             )
             logger.info(f"Created new assistant: {assistant.id}")
 
@@ -123,23 +105,3 @@ async def create_or_update_assistant(
         logger.error(f"Failed to {action} assistant: {e}")
 
     return assistant.id if assistant else None  # Conditionally return ID
-
-
-# Run the assistant creation in an asyncio event loop
-if __name__ == "__main__":
-    import sys
-
-    # Configure logger to stream to console
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    logger: logging.Logger = logging.getLogger(__name__)
-    
-    load_dotenv(override=True)
-    assistant_id = os.getenv("ASSISTANT_ID", None)
-
-    # Initialize the OpenAI client
-    openai: AsyncOpenAI = AsyncOpenAI()
-
-    # Run the main function in an asyncio event loop
-    asyncio.run(
-        create_or_update_assistant(openai, assistant_id, request, logger)
-    )

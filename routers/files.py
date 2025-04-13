@@ -1,15 +1,18 @@
 import os
 import logging
-from typing import List, Dict, Any, AsyncIterable
+from typing import List, Dict
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException, Depends, Form, Path
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
+from openai.types.file_purpose import FilePurpose
+from utils.files import get_or_create_vector_store
+from utils.streaming import stream_file_content
 
 logger = logging.getLogger("uvicorn.error")
 
 # Get assistant ID from environment variables
-load_dotenv()
+load_dotenv(override=True)
 assistant_id_env = os.getenv("ASSISTANT_ID")
 if not assistant_id_env:
     raise ValueError("ASSISTANT_ID environment variable not set")
@@ -20,21 +23,8 @@ router = APIRouter(
     tags=["assistants_files"]
 )
 
-# Helper function to get or create a vector store
-async def get_or_create_vector_store(assistantId: str, client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> str:
-    assistant = await client.beta.assistants.retrieve(assistantId)
-    if assistant.tool_resources and assistant.tool_resources.file_search and assistant.tool_resources.file_search.vector_store_ids:
-        return assistant.tool_resources.file_search.vector_store_ids[0]
-    vector_store = await client.vector_stores.create(name="sample-assistant-vector-store")
-    await client.beta.assistants.update(
-        assistantId,
-        tool_resources={
-            "file_search": {
-                "vector_store_ids": [vector_store.id],
-            },
-        }
-    )
-    return vector_store.id
+
+#TODO: Correctly return HTML, not JSON, from the routes below
 
 @router.get("/")
 async def list_files(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> List[Dict[str, str]]:
@@ -57,14 +47,16 @@ async def list_files(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> Li
             })
     return files_array
 
+
+# Take a purpose parameter, defaulting to "assistants"
 @router.post("/")
-async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
+async def upload_file(file: UploadFile = File(...), purpose: FilePurpose = Form(default="assistants")) -> Dict[str, str]:
     try:
         client = AsyncOpenAI()
         vector_store_id = await get_or_create_vector_store(assistant_id)
         openai_file = await client.files.create(
             file=file.file,
-            purpose="assistants"
+            purpose=purpose
         )
         await client.vector_stores.files.create(
             vector_store_id=vector_store_id,
@@ -74,11 +66,25 @@ async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def stream_file_content(content: bytes) -> AsyncIterable[bytes]:
-    yield content
+
+@router.delete("/delete")
+async def delete_file(
+    request: Request, 
+    fileId: str = Form(...), 
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+) -> Dict[str, str]:
+    vector_store_id = await get_or_create_vector_store(assistant_id, client)
+    await client.vector_stores.files.delete(vector_store_id=vector_store_id, file_id=fileId)
+    return {"message": "File deleted successfully"}
+
+
+# --- Streaming file content ---
+
+
+
 
 @router.get("/{file_id}")
-async def get_file(
+async def download_assistant_file(
     file_id: str = Path(..., description="The ID of the file to retrieve"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
@@ -96,18 +102,9 @@ async def get_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/delete")
-async def delete_file(
-    request: Request, 
-    fileId: str = Form(...), 
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
-) -> Dict[str, str]:
-    vector_store_id = await get_or_create_vector_store(assistant_id, client)
-    await client.vector_stores.files.delete(vector_store_id=vector_store_id, file_id=fileId)
-    return {"message": "File deleted successfully"}
 
 @router.get("/{file_id}/content")
-async def get_file_content(
+async def get_assistant_image_content(
     file_id: str,
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
@@ -119,7 +116,7 @@ async def get_file_content(
         # Get the file content from OpenAI
         file_content = await client.files.content(file_id)
         file_bytes = file_content.read()  # Remove await since read() returns bytes directly
-        
+
         # Return the file content as a streaming response
         # Note: In a production environment, you might want to add caching
         return StreamingResponse(
