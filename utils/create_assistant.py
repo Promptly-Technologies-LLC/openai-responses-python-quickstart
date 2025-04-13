@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.beta.assistant_create_params import AssistantCreateParams
 from openai.types.beta.assistant_update_params import AssistantUpdateParams
-from openai.types.beta.assistant_tool_param import CodeInterpreterToolParam, FileSearchToolParam, FunctionToolParam
+from openai.types.beta.code_interpreter_tool_param import CodeInterpreterToolParam
+from openai.types.beta.file_search_tool_param import FileSearchToolParam
+from openai.types.beta.function_tool_param import FunctionToolParam
 from openai.types.beta.assistant import Assistant
 from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.beta.file_search_tool_param import FileSearch
@@ -93,12 +95,12 @@ async def create_or_update_assistant(
         assistant_id: str | None,
         request: AssistantCreateParams | AssistantUpdateParams,
         logger: logging.Logger
-) -> str:
+) -> str | None:
     """
     Create or update the assistant based on the presence of an assistant_id.
     """
+    assistant = None  # Initialize assistant
     try:
-        assistant: Assistant
         if assistant_id:
             # Update the existing assistant
             assistant = await client.beta.assistants.update(
@@ -120,7 +122,7 @@ async def create_or_update_assistant(
         action = "update" if assistant_id else "create"
         logger.error(f"Failed to {action} assistant: {e}")
 
-    return assistant.id
+    return assistant.id if assistant else None  # Conditionally return ID
 
 
 # Run the assistant creation in an asyncio event loop

@@ -7,15 +7,16 @@ from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai import AsyncOpenAI
-from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
+from openai.lib.streaming._assistants import AsyncAssistantStreamManager, AsyncAssistantEventHandler
 from openai.types.beta.assistant_stream_event import (
     ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted,
     ThreadRunRequiresAction, ThreadRunStepCreated, ThreadRunStepDelta
 )
 from openai.types.beta import AssistantStreamEvent
-from openai.lib.streaming._assistants import AsyncAssistantEventHandler
 from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
-from openai.types.beta.threads.run import RequiredAction, Run
+from openai.types.beta.threads.run import RequiredAction
+from openai.types.beta.threads.message_content_delta import MessageContentDelta
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, Form, HTTPException
 from pydantic import BaseModel
@@ -188,8 +189,8 @@ async def stream_response(
                     time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadMessageDelta) and event.data.delta.content:
-                    content = event.data.delta.content[0]
-                    if hasattr(content, 'text') and content.text and content.text.value:
+                    content: MessageContentDelta = event.data.delta.content[0]
+                    if isinstance(content, TextDeltaBlock) and content.text and content.text.value:
                         yield sse_format(
                             f"textDelta{step_id}",
                             content.text.value
@@ -297,8 +298,8 @@ async def stream_response(
                                     location = args.get("location", "Unknown")
                                     dates_raw = args.get("dates", [datetime.today().strftime("%Y-%m-%d")])
                                     dates = [
-                                        datetime.strptime(d, "%Y-%m-%d") if isinstance(d, str) else d 
-                                        for d in dates_raw
+                                        datetime.strptime(d, "%Y-%m-%d")
+                                        for d in dates_raw if isinstance(d, str)
                                     ]
                                 except Exception as err:
                                     logger.error(f"Failed to parse function arguments: {err}")

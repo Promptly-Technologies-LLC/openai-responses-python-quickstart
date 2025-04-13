@@ -25,7 +25,7 @@ async def get_or_create_vector_store(assistantId: str, client: AsyncOpenAI = Dep
     assistant = await client.beta.assistants.retrieve(assistantId)
     if assistant.tool_resources and assistant.tool_resources.file_search and assistant.tool_resources.file_search.vector_store_ids:
         return assistant.tool_resources.file_search.vector_store_ids[0]
-    vector_store = await client.beta.vector_stores.create(name="sample-assistant-vector-store")
+    vector_store = await client.vector_stores.create(name="sample-assistant-vector-store")
     await client.beta.assistants.update(
         assistantId,
         tool_resources={
@@ -40,13 +40,13 @@ async def get_or_create_vector_store(assistantId: str, client: AsyncOpenAI = Dep
 async def list_files(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> List[Dict[str, str]]:
     # List files in the vector store
     vector_store_id = await get_or_create_vector_store(assistant_id, client)
-    file_list = await client.beta.vector_stores.files.list(vector_store_id)
+    file_list = await client.vector_stores.files.list(vector_store_id)
     files_array: List[Dict[str, str]] = []
     
     if file_list.data:
         for file in file_list.data:
             file_details = await client.files.retrieve(file.id)
-            vector_file_details = await client.beta.vector_stores.files.retrieve(
+            vector_file_details = await client.vector_stores.files.retrieve(
                 vector_store_id=vector_store_id,
                 file_id=file.id
             )
@@ -66,7 +66,7 @@ async def upload_file(file: UploadFile = File(...)) -> Dict[str, str]:
             file=file.file,
             purpose="assistants"
         )
-        await client.beta.vector_stores.files.create(
+        await client.vector_stores.files.create(
             vector_store_id=vector_store_id,
             file_id=openai_file.id
         )
@@ -103,7 +103,7 @@ async def delete_file(
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> Dict[str, str]:
     vector_store_id = await get_or_create_vector_store(assistant_id, client)
-    await client.beta.vector_stores.files.delete(vector_store_id=vector_store_id, file_id=fileId)
+    await client.vector_stores.files.delete(vector_store_id=vector_store_id, file_id=fileId)
     return {"message": "File deleted successfully"}
 
 @router.get("/{file_id}/content")
