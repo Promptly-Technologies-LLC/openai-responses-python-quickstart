@@ -12,6 +12,17 @@
     <script src="{{ url_for('static', path='sse.js') }}"></script>
   </head>
   <body>
+    <nav class="nav">
+      <div class="nav-links">
+        {% if request.url.path != url_for('read_home') %}
+          <a href="{{ url_for('read_home') }}">Home</a>
+        {% endif %}
+        {% if request.url.path != url_for('read_setup') %}
+          <a href="{{ url_for('read_setup') }}">Setup</a>
+        {% endif %}
+      </div>
+      <img class="logo" src="{{ url_for('static', path='openai.svg') }}" alt="OpenAI Logo" />
+    </nav>
     <main class="main">
       <div class="container">
         {% block content %}
@@ -19,6 +30,5 @@
         {% endblock %}
       </div>
     </main>
-    <img class="logo" src="{{ url_for('static', path='openai.svg') }}" alt="OpenAI Logo" />
   </body>
 </html>

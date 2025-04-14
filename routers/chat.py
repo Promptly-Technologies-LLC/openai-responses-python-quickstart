@@ -1,61 +1,29 @@
 import logging
 import time
 from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
-from dataclasses import dataclass
+from typing import AsyncGenerator, Optional, Union
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai import AsyncOpenAI
-from openai.resources.beta.threads.runs.runs import AsyncAssistantStreamManager
+from openai.lib.streaming._assistants import AsyncAssistantStreamManager, AsyncAssistantEventHandler
 from openai.types.beta.assistant_stream_event import (
     ThreadMessageCreated, ThreadMessageDelta, ThreadRunCompleted,
     ThreadRunRequiresAction, ThreadRunStepCreated, ThreadRunStepDelta
 )
 from openai.types.beta import AssistantStreamEvent
-from openai.lib.streaming._assistants import AsyncAssistantEventHandler
-from openai.types.beta.threads.run_submit_tool_outputs_params import ToolOutput
-from openai.types.beta.threads.run import RequiredAction, Run
+from openai.types.beta.threads.run import RequiredAction
+from openai.types.beta.threads.message_content_delta import MessageContentDelta
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 from fastapi.responses import StreamingResponse
-from fastapi import APIRouter, Depends, Form, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Form
 
 import json
 
-from utils.custom_functions import get_weather
+from utils.custom_functions import get_weather, post_tool_outputs
 from utils.sse import sse_format
+from utils.streaming import AssistantStreamMetadata
 
-@dataclass
-class AssistantStreamMetadata:
-    """Metadata for assistant stream events that require further processing."""
-    type: str  # Always "metadata"
-    required_action: Optional[RequiredAction]
-    step_id: str
-    run_requires_action_event: Optional[ThreadRunRequiresAction]
-
-    @classmethod
-    def create(cls, 
-               required_action: Optional[RequiredAction],
-               step_id: str,
-               run_requires_action_event: Optional[ThreadRunRequiresAction]
-    ) -> "AssistantStreamMetadata":
-        """Factory method to create a metadata instance with validation."""
-        return cls(
-            type="metadata",
-            required_action=required_action,
-            step_id=step_id,
-            run_requires_action_event=run_requires_action_event
-        )
-
-    def requires_tool_call(self) -> bool:
-        """Check if this metadata indicates a required tool call."""
-        return (self.required_action is not None 
-                and self.required_action.submit_tool_outputs is not None 
-                and bool(self.required_action.submit_tool_outputs.tool_calls))
-
-    def get_run_id(self) -> str:
-        """Get the run ID from the requires action event, or empty string if none."""
-        return self.run_requires_action_event.data.id if self.run_requires_action_event else ""
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
@@ -68,43 +36,6 @@ router: APIRouter = APIRouter(
 
 # Jinja2 templates
 templates = Jinja2Templates(directory="templates")
-
-# Utility function for submitting tool outputs to the assistant
-class ToolCallOutputs(BaseModel):
-    tool_outputs: Dict[str, Any]
-    runId: str
-
-async def post_tool_outputs(client: AsyncOpenAI, data: Dict[str, Any], thread_id: str) -> AsyncAssistantStreamManager:
-    """
-    data is expected to be something like
-    {
-      "tool_outputs": {
-        "output": [{"location": "City", "temperature": 70, "conditions": "Sunny"}],
-        "tool_call_id": "call_123"
-      },
-      "runId": "some-run-id",
-    }
-    """
-    try:
-        outputs_list = [
-            ToolOutput(
-                output=str(data["tool_outputs"]["output"]),
-                tool_call_id=data["tool_outputs"]["tool_call_id"]
-            )
-        ]
-
-
-        stream_manager = client.beta.threads.runs.submit_tool_outputs_stream(
-            thread_id=thread_id,
-            run_id=data["runId"],
-            tool_outputs=outputs_list,
-        )
-
-        return stream_manager
-
-    except Exception as e:
-        logger.error(f"Error submitting tool outputs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Route to submit a new user message to a thread and mount a component that
@@ -170,8 +101,13 @@ async def stream_response(
         async with stream_manager as event_handler:
             event: AssistantStreamEvent
             async for event in event_handler:
+                # Debug logging for all events
+                logger.debug(f"SSE Event Type: {type(event).__name__}")
+                logger.debug(f"SSE Event Data: {event.data}")
+
                 if isinstance(event, ThreadMessageCreated):
                     step_id = event.data.id
+                    logger.debug(f"Message Created - Step ID: {step_id}")
 
                     yield sse_format(
                         "messageCreated",
@@ -183,8 +119,8 @@ async def stream_response(
                     time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadMessageDelta) and event.data.delta.content:
-                    content = event.data.delta.content[0]
-                    if hasattr(content, 'text') and content.text and content.text.value:
+                    content: MessageContentDelta = event.data.delta.content[0]
+                    if isinstance(content, TextDeltaBlock) and content.text and content.text.value:
                         yield sse_format(
                             f"textDelta{step_id}",
                             content.text.value
@@ -192,6 +128,7 @@ async def stream_response(
 
                 if isinstance(event, ThreadRunStepCreated) and event.data.type == "tool_calls":
                     step_id = event.data.id
+                    logger.debug(f"Tool Call Created - Step ID: {step_id}")
 
                     yield sse_format(
                         f"toolCallCreated",
@@ -207,6 +144,7 @@ async def stream_response(
                     if tool_calls:
                         # TODO: Support parallel function calling
                         tool_call = tool_calls[0]
+                        logger.debug(f"Tool Call Delta - Type: {tool_call.type}")
 
                         # Handle function tool call
                         if tool_call.type == "function":
@@ -224,27 +162,33 @@ async def stream_response(
                         # Handle code interpreter tool calls
                         elif tool_call.type == "code_interpreter":
                             if tool_call.code_interpreter and tool_call.code_interpreter.input:
+                                logger.debug(f"Code Interpreter Input: {tool_call.code_interpreter.input}")
                                 yield sse_format(
                                     f"toolDelta{step_id}",
                                     str(tool_call.code_interpreter.input)
                                 )
                             if tool_call.code_interpreter and tool_call.code_interpreter.outputs:
                                 for output in tool_call.code_interpreter.outputs:
+                                    logger.debug(f"Code Interpreter Output Type: {output.type}")
                                     if output.type == "logs" and output.logs:
                                         yield sse_format(
                                             f"toolDelta{step_id}",
                                             str(output.logs)
                                         )
                                     elif output.type == "image" and output.image and output.image.file_id:
+                                        logger.debug(f"Image Output - File ID: {output.image.file_id}")
+                                        # Create the image HTML on the backend
+                                        image_html = f'<img src="/assistants/{assistant_id}/files/{output.image.file_id}/content" class="code-interpreter-image">'
                                         yield sse_format(
-                                            f"toolDelta{step_id}",
-                                            str(output.image.file_id)
+                                            f"imageOutput",
+                                            image_html
                                         )
 
                 # If the assistant run requires an action (a tool call), break and handle it
                 if isinstance(event, ThreadRunRequiresAction):
                     required_action = event.data.required_action
                     run_requires_action_event = event
+                    logger.debug("Run Requires Action Event")
                     if required_action and required_action.submit_tool_outputs:
                         break
 
@@ -284,8 +228,8 @@ async def stream_response(
                                     location = args.get("location", "Unknown")
                                     dates_raw = args.get("dates", [datetime.today().strftime("%Y-%m-%d")])
                                     dates = [
-                                        datetime.strptime(d, "%Y-%m-%d") if isinstance(d, str) else d 
-                                        for d in dates_raw
+                                        datetime.strptime(d, "%Y-%m-%d")
+                                        for d in dates_raw if isinstance(d, str)
                                     ]
                                 except Exception as err:
                                     logger.error(f"Failed to parse function arguments: {err}")

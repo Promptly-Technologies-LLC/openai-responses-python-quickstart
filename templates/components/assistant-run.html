@@ -2,6 +2,8 @@
 <div class="assistant-run" hx-swap="beforeend" 
      hx-ext="sse"     
      sse-connect="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/receive" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput" 
-     sse-close="endStream">
+     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput" 
+     sse-close="endStream"
+     data-assistant-id="{{ assistant_id }}"
+     data-thread-id="{{ thread_id }}">
 </div>
