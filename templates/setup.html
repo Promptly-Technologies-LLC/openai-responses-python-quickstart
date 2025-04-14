@@ -6,35 +6,35 @@
           {% if status and status_message %}
             <p class="status-message {{ status }}">{{ status_message }}</p>
           {% endif %}
-          
-          <h1 class="title">{% if assistant_id %}Update Assistant{% else %}Setup Required{% endif %}</h1>
 
           {% if "API key" in setup_message %}
-            <div class="setupForm">
+            <div class="setupSection">
+              <h3>Setup Required</h3>
               <p class="setupMessage">{{ setup_message }}</p>
-                <form action="{{ url_for('set_openai_api_key') }}" method="POST">
-                  <div class="inputWrapper">
-                    <input 
-                      type="password"
-                      name="api_key"
-                      placeholder="sk-..."
-                      required
-                      class="input"
-                    >
-                  </div>
-                  <button 
-                    type="submit"
-                    class="button"
+              <form action="{{ url_for('set_openai_api_key') }}" method="POST">
+                <div class="inputWrapper">
+                  <input 
+                    type="password"
+                    name="api_key"
+                    placeholder="sk-..."
+                    required
+                    class="input"
                   >
-                    Save API Key
-                  </button>
-                </form>
-              </div>
+                </div>
+                <button 
+                  type="submit"
+                  class="button"
+                >
+                  Save API Key
+                </button>
+              </form>
+            </div>
           {% else %} {# Covers missing assistant ID or user wants to update #}
-              <div class="setupForm">
+              <div class="setupSection">
+                {% if assistant_id %}<h3>Update Assistant</h3>{% else %}<h3>Create Assistant</h3>{% endif %}
                 <p class="setupMessage">Select tools for your assistant:</p>
                 <form action="{{ url_for('create_update_assistant') }}" method="POST">
-                  <div class="checkboxGroup">
+                  <div>
                     <label>
                       <input type="checkbox" name="tool_types" value="code_interpreter" {% if "code_interpreter" in current_tools %}checked{% endif %}>
                       Code Interpreter
@@ -56,6 +56,11 @@
                   </button>
                 </form>
               </div>
+              {% if assistant_id and "file_search" in current_tools %}
+                <div class="setupSection" style="margin-top: 20px;">
+                    {% include 'components/file-viewer.html' %}
+                </div>
+              {% endif %}
           {% endif %}
         </div>
 {% endblock %}

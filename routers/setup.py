@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
-from openai.types.beta import Assistant
 from urllib.parse import quote
 
 from utils.create_assistant import create_or_update_assistant, ToolTypes
@@ -59,6 +58,7 @@ async def read_setup(
     load_dotenv(override=True)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     assistant_id = os.getenv("ASSISTANT_ID")
+    logger.info(f"Assistant ID: {assistant_id}")
     
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."

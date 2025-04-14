@@ -456,43 +456,12 @@ pre {
   margin-right: 8px;
 }
 
-.setupContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  max-width: 600px;
-  width: 100%;
-  padding: 40px 20px;
-}
-
-.setupForm {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  width: 100%;
-}
-
 .inputWrapper {
   margin-bottom: 20px;
   width: 100%;
   max-width: 400px;
   display: flex;
   justify-content: center;
-}
-
-.setupForm form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-}
-
-.setupMessage {
-  font-size: 1.1em;
-  text-align: center;
-  margin-bottom: 8px;
 }
 
 .toolOutput {
@@ -570,19 +539,6 @@ pre {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.checkboxGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.checkboxGroup label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .errorMessage {
   color: #e53e3e;
   font-size: 0.875rem;
@@ -631,4 +587,106 @@ pre {
 
 .status-message.error {
   color: red;
+}
+
+/* --- Setup Page Styles --- */
+.setupContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  max-width: 600px;
+  width: 100%;
+  padding: 40px 20px;
+}
+
+/* Style for the main sections */
+.setupSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center direct children */
+  gap: 20px;
+  width: 100%;
+}
+
+/* Style for forms within setup sections */
+.setupSection form {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center form elements */
+  gap: 20px;
+  width: 100%;
+}
+
+/* Style specifically the div holding checkboxes */
+.setupSection form > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* Align labels to the left */
+  gap: 10px; /* Vertical gap between labels */
+  width: auto; /* Fit content width */
+  margin-bottom: 1rem; /* Restore some margin below the group */
+}
+
+/* Style labels containing checkboxes */
+.setupSection label { /* Target labels more generally within setup sections */
+  display: flex;
+  align-items: center; /* Align checkbox and text vertically */
+  gap: 0.5rem; /* Space between checkbox and text */
+  cursor: pointer;
+}
+
+.setupMessage {
+  font-size: 1.1em;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.fileList {
+  list-style: none;
+  padding: 0;
+  width: 100%; /* Ensure list takes full width */
+  max-width: 550px; /* Match setup form max-width for consistency */
+}
+
+.fileItem { 
+  background-color: #f9f9f9; 
+  border: 1px solid #ddd; 
+  margin-bottom: 5px; 
+  padding: 8px 12px; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  border-radius: 4px; /* Add slight rounding */
+}
+
+.fileItem span:first-child { /* Target the filename/status span */
+  flex-grow: 1; /* Allow text to take available space */
+  margin-right: 10px; /* Space before delete button */
+  word-break: break-all; /* Prevent long filenames overflowing */
+}
+
+.deleteButton { 
+  background-color: #dc3545 !important; /* Use !important to override base .button style if needed */
+  color: white !important; 
+  border: none; 
+  padding: 5px 10px !important; /* Ensure padding is applied */
+  cursor: pointer; 
+  border-radius: 3px !important; /* Ensure border-radius is applied */
+  font-size: 0.9em !important; /* Make button slightly smaller */
+  /* Remove base button styles that might conflict */
+  min-width: auto; 
+  flex-shrink: 0; /* Prevent button from shrinking */
+}
+
+.deleteButton:hover { 
+  background-color: #c82333 !important; 
+}
+
+/* Reuse existing .errorMessage style? Or keep specific? Let's keep specific for now */
+.fileItem .errorMessage { 
+  color: #c82333; /* Slightly darker red */
+  font-size: 0.8em; 
+  margin-left: 10px; 
+  font-style: italic;
 }

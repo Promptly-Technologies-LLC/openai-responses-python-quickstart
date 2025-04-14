@@ -6,10 +6,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, HTMLResponse
 from routers import chat, files, setup
 from utils.threads import create_thread
-from fastapi.exceptions import HTTPException
+from fastapi.exceptions import HTTPException, RequestValidationError
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -41,6 +41,25 @@ async def general_exception_handler(request: Request, exc: Exception) -> Respons
         {"request": request, "error_message": str(exc)},
         status_code=500
     )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Log the detailed validation errors
+    logger.error(f"Validation error: {exc.errors()}") 
+    error_details = "; ".join([f"{err['loc'][-1]}: {err['msg']}" for err in exc.errors()])
+
+    # Check if it's an htmx request
+    if request.headers.get("hx-request") == "true":
+        # Return an HTML fragment suitable for htmx swapping
+        error_html = f'<div id="file-list-container"><p class="errorMessage">Validation Error: {error_details}</p></div>' # Assuming target is file-list-container
+        return HTMLResponse(content=error_html, status_code=200)
+    else:
+        # Return the full error page for standard requests
+        return templates.TemplateResponse(
+            "error.html",
+            {"request": request, "error_message": f"Invalid input: {error_details}"},
+            status_code=422,
+        )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
