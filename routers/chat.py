@@ -116,7 +116,6 @@ async def stream_response(
                             stream_name=f"textDelta{step_id}"
                         )
                     )
-                    time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadMessageDelta) and event.data.delta.content:
                     content: MessageContentDelta = event.data.delta.content[0]
@@ -137,7 +136,6 @@ async def stream_response(
                             stream_name=f'toolDelta{step_id}'
                         )
                     )
-                    time.sleep(0.25)  # Give the client time to render the message
 
                 if isinstance(event, ThreadRunStepDelta) and event.data.delta.step_details and event.data.delta.step_details.type == "tool_calls":
                     tool_calls = event.data.delta.step_details.tool_calls
