@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime
 from typing import AsyncGenerator, Optional, Union
 from fastapi.templating import Jinja2Templates
@@ -113,16 +112,19 @@ async def stream_response(
                         "messageCreated",
                         templates.get_template("components/assistant-step.html").render(
                             step_type="assistantMessage",
-                            stream_name=f"textDelta{step_id}"
+                            step_id=step_id
                         )
                     )
 
                 if isinstance(event, ThreadMessageDelta) and event.data.delta.content:
                     content: MessageContentDelta = event.data.delta.content[0]
                     if isinstance(content, TextDeltaBlock) and content.text and content.text.value:
+                        step_id = event.data.id
+                        text_value = content.text.value
+                        sse_data = f'<span hx-swap-oob="beforeend:#step-{step_id}">{text_value}</span>'
                         yield sse_format(
-                            f"textDelta{step_id}",
-                            content.text.value
+                            "textDelta",
+                            sse_data
                         )
 
                 if isinstance(event, ThreadRunStepCreated) and event.data.type == "tool_calls":
