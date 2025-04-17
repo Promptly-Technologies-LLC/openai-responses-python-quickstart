@@ -32,8 +32,28 @@
           {% else %} {# Covers missing assistant ID or user wants to update #}
               <div class="setupSection">
                 {% if assistant_id %}<h3>Update Assistant</h3>{% else %}<h3>Create Assistant</h3>{% endif %}
-                <p class="setupMessage">Select tools for your assistant:</p>
+                
                 <form action="{{ url_for('create_update_assistant') }}" method="POST">
+                  <div>
+                    <label for="model-select">Select Model:</label>
+                    <select name="model" id="model-select" class="input" required>
+                      {% if available_models %}
+                        {% for model_id in available_models %}
+                          <option value="{{ model_id }}" {% if model_id == current_model %}selected{% endif %}>{{ model_id }}</option>
+                        {% endfor %}
+                      {% else %}
+                        <option value="" disabled>Could not load models</option>
+                        {# Optionally include a default fallback if loading fails #}
+                        {% if current_model %}
+                          <option value="{{ current_model }}" selected>{{ current_model }} (current)</option>
+                        {% else %}
+                           <option value="gpt-4o" selected>gpt-4o (default)</option> {# Default fallback #}
+                        {% endif %}
+                      {% endif %}
+                    </select>
+                  </div>
+                  
+                  <p class="setupMessage" style="margin-top: 15px;">Select tools for your assistant:</p>
                   <div>
                     <label>
                       <input type="checkbox" name="tool_types" value="code_interpreter" {% if "code_interpreter" in current_tools %}checked{% endif %}>

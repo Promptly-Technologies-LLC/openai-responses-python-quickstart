@@ -69,6 +69,7 @@ async def create_or_update_assistant(
         client: AsyncOpenAI,
         assistant_id: str | None,
         tool_types: List[ToolTypes],
+        model: str,
         logger: logging.Logger
 ) -> str | None:
     """
@@ -83,7 +84,7 @@ async def create_or_update_assistant(
                 assistant_id,
                 instructions="You are a helpful assistant.",
                 name="Quickstart Assistant",
-                model="gpt-4o",
+                model=model,
                 tools=tool_params
             )
             logger.info(f"Updated assistant with ID: {assistant_id}")
@@ -92,7 +93,7 @@ async def create_or_update_assistant(
             assistant = await client.beta.assistants.create(
                 instructions="You are a helpful assistant.",
                 name="Quickstart Assistant",
-                model="gpt-4o",
+                model=model,
                 tools=tool_params
             )
             logger.info(f"Created new assistant: {assistant.id}")
