@@ -32,6 +32,15 @@ a {
 ul,
 ol {
   padding-left: 20px;
+  white-space: normal;
+}
+
+li {
+  white-space: normal;
+}
+
+li > ul {
+  margin-bottom: 0;
 }
 
 pre {

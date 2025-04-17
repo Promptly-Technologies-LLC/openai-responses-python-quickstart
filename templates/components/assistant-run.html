@@ -3,6 +3,7 @@
      hx-ext="sse"     
      sse-connect="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/receive" 
      sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta" 
+     hx-on:htmx:sse-before-message="handleSSETextDelta(event)"
      sse-close="endStream"
      data-assistant-id="{{ assistant_id }}"
      data-thread-id="{{ thread_id }}">
