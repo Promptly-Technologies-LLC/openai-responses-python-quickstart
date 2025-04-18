@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from typing import AsyncGenerator, Optional, Union
 from fastapi.templating import Jinja2Templates
@@ -19,6 +20,7 @@ from fastapi import APIRouter, Depends, Form
 
 import json
 
+from routers import files as files_router
 from utils.custom_functions import get_weather, post_tool_outputs
 from utils.sse import sse_format
 from utils.streaming import AssistantStreamMetadata
@@ -121,6 +123,28 @@ async def stream_response(
                     if isinstance(content, TextDeltaBlock) and content.text and content.text.value:
                         step_id = event.data.id
                         text_value = content.text.value
+                        annotations = content.text.annotations
+                        
+                        # Check for file citation annotations
+                        if annotations:
+                            logger.debug(f"Annotation found: {annotations}")
+                            for annotation in annotations:
+                                if annotation.type == 'file_citation' and hasattr(annotation, 'file_citation') and annotation.file_citation:
+                                    match = re.search(r'【.*?†(.*?)】', text_value)
+                                    if match:
+                                        file_name = match.group(1)
+                                        # Manually construct the URL
+                                        file_url = f'/assistants/{assistant_id}/files/{file_name}'
+                                        text_value = f'[†]({file_url})'
+                                        logger.debug(f"Replacing citation with link: {text_value}")
+                                    else:
+                                        # Handle error: pattern not found in the text
+                                        logger.warning(f"Could not extract filename from citation text: {text_value}")
+                                        file_name = None # Indicate failure
+                                    
+                                    # Assuming one citation per delta for now
+                                    break 
+                        
                         sse_data = f'<span hx-swap-oob="beforeend:#step-{step_id}">{text_value}</span>'
                         yield sse_format(
                             "textDelta",
@@ -205,7 +229,7 @@ async def stream_response(
     async def event_generator() -> AsyncGenerator[str, None]:
         """
         Main generator for SSE events. We call our helper function to handle the assistant
-        stream, and if the assistant requests a tool call, we do it and then re-stream the stream.
+        stream, and if the assistant requests a tool call, we execute it and then re-stream the stream.
         """
         step_id: str = ""
         stream_manager: AsyncAssistantStreamManager[AsyncAssistantEventHandler] = client.beta.threads.runs.stream(

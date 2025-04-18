@@ -5,10 +5,10 @@ from dotenv import load_dotenv
 from fastapi import (
     APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form
 )
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
-from utils.files import get_or_create_vector_store, get_files_for_vector_store
+from utils.files import get_or_create_vector_store, get_files_for_vector_store, store_file, retrieve_file, delete_local_file
 from utils.streaming import stream_file_content
 
 logger = logging.getLogger("uvicorn.error")
@@ -69,18 +69,38 @@ async def upload_file(
         )
 
     error_message = None
+    file_content = None
     try:
-        # Upload the file to OpenAI
+        # 1. Read the file content first
+        file_content = await file.read()
+        if not file.filename:
+            raise ValueError("File has no filename")
+        if not file_content:
+            raise ValueError("File content is empty")
+
+        # 2. Upload the file content to OpenAI
         openai_file = await client.files.create(
-            file=(file.filename, file.file),
+            file=(file.filename, file_content),
             purpose=purpose
         )
         
-        # Add the uploaded file to the vector store
+        # 3. Add the uploaded file to the vector store
         await client.vector_stores.files.create(
             vector_store_id=vector_store_id,
             file_id=openai_file.id
         )
+        logger.info(f"File {file.filename} uploaded to OpenAI and added to vector store.")
+
+        # 4. Store the file locally using the same content
+        try:
+            store_file(file.filename, file_content)
+        except Exception as e:
+            logger.error(f"Error storing file {file.filename} locally: {e}")
+            error_message = f"Error storing file locally"
+
+    except ValueError as ve:
+        logger.error(f"File validation error for assistant {assistant_id}: {ve}")
+        error_message = str(ve)
     except Exception as e:
         logger.error(f"Error uploading file for assistant {assistant_id}: {e}")
         error_message = f"Error uploading file for assistant"
@@ -121,6 +141,26 @@ async def delete_file(
     try:
         vector_store_id = await get_or_create_vector_store(assistant_id, client)
         
+        # Retrieve filename before attempting deletions
+        file_to_delete_name = None
+        try:
+            retrieved_file = await client.files.retrieve(file_id)
+            if retrieved_file and retrieved_file.filename:
+                file_to_delete_name = retrieved_file.filename
+                logger.info(f"Retrieved filename '{retrieved_file.filename}' for deletion.")
+            else:
+                logger.warning(f"Could not retrieve filename for file_id {file_id}")
+        except Exception as retrieve_err:
+            logger.error(f"Error retrieving file object {file_id} for filename: {retrieve_err}")
+
+        # Attempt to delete stored file if filename was found
+        if file_to_delete_name:
+            try:
+                delete_local_file(file_to_delete_name)
+            except Exception as local_delete_err:
+                # Log error but continue with OpenAI/VS deletion
+                logger.error(f"Error deleting local file {file_to_delete_name}: {local_delete_err}")
+
         # 1. Delete the file association from the vector store
         try:
             deleted_vs_file = await client.vector_stores.files.delete(
@@ -175,9 +215,20 @@ async def delete_file(
 
 # --- Streaming file content routes ---
 
-@router.get("/{file_id}")
+@router.get("/{file_name}")
 async def download_assistant_file(
-    file_id: str = Path(..., description="The ID of the file to retrieve"),
+    assistant_id: str = Path(..., description="The ID of the Assistant"),
+    file_name: str = Path(..., description="The name of the file to retrieve")
+) -> FileResponse:
+    """Serves an assistant file stored locally in the uploads directory."""
+    return retrieve_file(file_name)
+
+
+# This endpoint retrieves files uploaded TO openai (e.g., code interpreter output)
+# Keep it separate for clarity
+@router.get("/{file_id}/openai_content")
+async def download_openai_file(
+    file_id: str = Path(..., description="The ID of the file stored in OpenAI"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
     try:
@@ -187,12 +238,14 @@ async def download_assistant_file(
         if not hasattr(file_content, 'content'):
             raise HTTPException(status_code=500, detail="File content not available")
             
+        # Use stream_file_content helper
         return StreamingResponse(
-            stream_file_content(file_content.content),
-            headers={"Content-Disposition": f'attachment; filename=\"{file.filename or "download"}\"'}
+            stream_file_content(file_content.content), # Assuming stream_file_content handles bytes
+            headers={"Content-Disposition": f'attachment; filename="{file.filename or file_id}"'} # Use file_id as fallback filename
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error downloading file {file_id} from OpenAI: {e}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file from OpenAI: {str(e)}")
 
 
 @router.get("/{file_id}/content")
