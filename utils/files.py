@@ -1,9 +1,12 @@
 import logging
-from typing import List, Dict, Any
-from fastapi import Depends
+import os
+from typing import List, Dict
+from fastapi import Depends, HTTPException
+from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
 from openai.types.file_object import FileObject
 from openai.types.vector_stores.vector_store_file import VectorStoreFile
+
 logger = logging.getLogger("uvicorn.error")
 
 # Helper function to get or create a vector store
@@ -61,3 +64,60 @@ async def get_files_for_vector_store(vector_store_id: str, client: AsyncOpenAI) 
         logger.error(f"Error listing files for vector store {vector_store_id}: {e}")
         # Return empty list or re-raise depending on desired behavior
         return []
+
+
+def store_file(file_name: str, file_content: bytes):
+    """Store a file in the uploads directory."""
+    upload_dir = "uploads"
+    os.makedirs(upload_dir, exist_ok=True) # Create directory if it doesn't exist
+    file_path = os.path.join(upload_dir, file_name)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        logger.info(f"File stored successfully: {file_path}")
+    except IOError as e:
+        logger.error(f"Error writing file {file_path}: {e}")
+        # Re-raise a more specific exception or handle as needed
+        # For now, letting the caller's try/except handle it might be okay
+        raise
+
+
+def retrieve_file(file_name: str):
+    """Retrieve a file from the uploads directory."""
+    upload_dir = "uploads"
+    file_path = os.path.join(upload_dir, file_name)
+
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Basic security check: prevent path traversal
+    if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
+        logger.error(f"Attempted path traversal: {file_path}")
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        return FileResponse(path=file_path, filename=file_name, media_type='application/octet-stream')
+    except Exception as e:
+        logger.error(f"Error serving file {file_path}: {e}")
+        raise HTTPException(status_code=500, detail="Error serving file")
+
+
+def delete_local_file(file_name: str):
+    """Delete a file from the local uploads directory."""
+    upload_dir = "uploads"
+    file_path = os.path.join(upload_dir, file_name)
+
+    # Basic security check
+    if not os.path.abspath(file_path).startswith(os.path.abspath(upload_dir)):
+        logger.error(f"Attempted path traversal during delete: {file_path}")
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Successfully deleted local file: {file_path}")
+        else:
+            logger.warning(f"Attempted to delete local file, but it was not found: {file_path}")
+    except OSError as e:
+        logger.error(f"Error deleting local file {file_path}: {e}")

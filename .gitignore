@@ -10,3 +10,4 @@ __pycache__
 .repomix-output.txt
 repomix-output.txt
 artifacts/
+uploads/
