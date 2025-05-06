@@ -26,7 +26,7 @@ function handleSSETextDelta(evt) {
   }
 
   const swapOobAttr = oobElement.getAttribute('hx-swap-oob');
-  const markdownChunk = oobElement.textContent || '';
+  const markdownChunk = oobElement.innerHTML || '';
 
   if (!swapOobAttr) {
        // Might be a non-OOB textDelta, handle differently or ignore?
@@ -72,27 +72,35 @@ function handleSSETextDelta(evt) {
   }
 
   try {
-      // Use marked.parse() for incremental updates.
-      const rawHtml = marked.parse(updatedMarkdown);
-      // Configure DOMPurify
-      const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
-          // Allows standard HTML elements
-          USE_PROFILES: { html: true }
-       });
-      targetElement.innerHTML = sanitizedHtml;
+    // Create custom renderer with link target
+    const renderer = new marked.Renderer();
+    // Override link renderer: destructure the token object for href and text
+    renderer.link = ({ href, title, text }) => {
+      const titleAttr = title ? ` title="${title}"` : '';
+      return `<a target="_blank" rel="noopener noreferrer" href="${href}"${titleAttr}>${text}</a>`;
+    };
 
-      // 3) Auto-scroll the main messages container
-      const messagesContainer = document.getElementById('messages');
-      if (messagesContainer) {
-          // Scroll only if the user isn't intentionally scrolled up
-          const isScrolledToBottom = messagesContainer.scrollHeight - messagesContainer.clientHeight <= messagesContainer.scrollTop + 1; // +1 for tolerance
-          if(isScrolledToBottom) {
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
-          }
-      }
+    // Use marked.parse() with custom renderer
+    const rawHtml = marked.parse(updatedMarkdown, { renderer });
+    // Configure DOMPurify
+    const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
+        // Allows standard HTML elements
+        USE_PROFILES: { html: true }
+      });
+    targetElement.innerHTML = sanitizedHtml;
+
+    // 3) Auto-scroll the main messages container
+    const messagesContainer = document.getElementById('messages');
+    if (messagesContainer) {
+        // Scroll only if the user isn't intentionally scrolled up
+        const isScrolledToBottom = messagesContainer.scrollHeight - messagesContainer.clientHeight <= messagesContainer.scrollTop + 1;
+        if(isScrolledToBottom) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    }
   } catch (e) {
-      console.error("Error processing markdown:", e);
-      // Fallback on error: append raw chunk to existing text content
-       targetElement.textContent = (targetElement.textContent || '') + markdownChunk;
+    console.error("Error processing markdown:", e);
+    // Fallback on error: append raw chunk to existing text content
+    targetElement.innerHTML = (targetElement.innerHTML || '') + markdownChunk;
   }
 }
