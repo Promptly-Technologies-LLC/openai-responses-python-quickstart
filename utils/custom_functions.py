@@ -86,7 +86,7 @@ def get_function_tool_param() -> FunctionToolParam:
     )
 
 
-def get_weather(location, dates: Sequence[str | datetime] = [datetime.today()]):
+def get_weather(location, dates: Sequence[str | datetime] = [datetime.today()]) -> list[dict[str, Any]]:
     """
     Generate random weather reports for a given location over a date range.
 
