@@ -41,6 +41,36 @@ If your OPENAI_API_KEY or ASSISTANT_ID are not set, you will be redirected to `/
 
 The assistant is capable of multi-step workflows involving multiple chained tool calls, including file searches, code execution, and calling custom functions. Tool calls will be displayed in the chat as they are processed.
 
+## Architecture
+
+When the user client sends a message to the application server, the server forwards the message to the OpenAI Assistants API. The assistant can reply with either a message to the user (which the server simply forwards to the client) or a tool call (which must be executed before the assistant can proceed with the conversation).
+
+The Assistants API supports three types of tool calls:
+
+- Code Interpreter
+- File Search
+- Custom functions
+
+Code Interpreter and File Search tool calls are executed on OpenAI's servers, while custom functions are executed on the application server.
+
+For custom function calls, the assistant will send the application server a JSON object with the function name and arguments (which the application server forwards to the user client for visibility). The application server will then execute the function and return the result to both the assistant and the client. The assistant will then respond to the application server with either another tool call or a final message to the user interpreting the results, which the server forwards to the client.
+
+```mermaid
+graph TB
+    subgraph "Application"
+        A[Browser Client] --> |"User messages"|C[Chat Application Server]
+        C -->|"Assistant messages, tool calls, tool results"| A
+    end
+
+    subgraph "OpenAI Assistants API"
+        D[Assistant Model] -->|"Assistant messages and custom tool calls"| C
+        D -->|"Code Interpreter<br>or File Search tool calls"| E[OpenAI Function Executor]
+        E -->|"Result"| D
+        C -->|"User messages or custom tool call results"| D
+        E -->|"Result"| C
+    end
+```
+
 ## Defining Your Own Custom Functions
 
 Define custom functions in the `utils/custom_functions.py` file. An example `get_weather` function is provided. You will need to import your function in `routers/chat.py` and add your execution logic to the `event_generator` function (search for `get_weather` in that file to see a function execution example). See also `templates/components/weather-widget.html` for an example widget for displaying the function call results.
