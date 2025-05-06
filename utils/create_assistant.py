@@ -70,6 +70,7 @@ async def create_or_update_assistant(
         assistant_id: str | None,
         tool_types: List[ToolTypes],
         model: str,
+        instructions: str,
         logger: logging.Logger
 ) -> str | None:
     """
@@ -82,7 +83,7 @@ async def create_or_update_assistant(
             # Update the existing assistant
             assistant = await client.beta.assistants.update(
                 assistant_id,
-                instructions="You are a helpful assistant.",
+                instructions=instructions,
                 name="Quickstart Assistant",
                 model=model,
                 tools=tool_params
@@ -91,7 +92,7 @@ async def create_or_update_assistant(
         else:
             # Create a new assistant
             assistant = await client.beta.assistants.create(
-                instructions="You are a helpful assistant.",
+                instructions=instructions,
                 name="Quickstart Assistant",
                 model=model,
                 tools=tool_params
