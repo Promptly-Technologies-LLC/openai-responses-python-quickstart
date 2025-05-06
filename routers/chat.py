@@ -39,6 +39,10 @@ router: APIRouter = APIRouter(
 templates = Jinja2Templates(directory="templates")
 
 
+def wrap_for_oob_swap(step_id: str, text_value: str) -> str:
+    return f'<span hx-swap-oob="beforeend:#step-{step_id}">{text_value}</span>'
+
+
 # Route to submit a new user message to a thread and mount a component that
 # will start an assistant run stream
 @router.post("/send")
@@ -145,26 +149,27 @@ async def stream_response(
                                     # Assuming one citation per delta for now
                                     break 
                         
-                        sse_data = f'<span hx-swap-oob="beforeend:#step-{step_id}">{text_value}</span>'
+                        sse_data = wrap_for_oob_swap(step_id, text_value)
                         yield sse_format(
                             "textDelta",
                             sse_data
                         )
 
                 if isinstance(event, ThreadRunStepCreated) and event.data.type == "tool_calls":
+                    logger.debug(f"Tool Call Created - Data: {str(event.data)}")
                     step_id = event.data.id
-                    logger.debug(f"Tool Call Created - Step ID: {step_id}")
 
                     yield sse_format(
-                        f"toolCallCreated",
+                        "toolCallCreated",
                         templates.get_template('components/assistant-step.html').render(
                             step_type='toolCall',
-                            stream_name=f'toolDelta{step_id}'
+                            step_id=step_id
                         )
                     )
 
                 if isinstance(event, ThreadRunStepDelta) and event.data.delta.step_details and event.data.delta.step_details.type == "tool_calls":
                     tool_calls = event.data.delta.step_details.tool_calls
+                    step_id = event.data.id
                     if tool_calls:
                         # TODO: Support parallel function calling
                         tool_call = tool_calls[0]
@@ -174,13 +179,13 @@ async def stream_response(
                         if tool_call.type == "function":
                             if tool_call.function and tool_call.function.name:
                                 yield sse_format(
-                                    f"toolDelta{step_id}",
-                                    tool_call.function.name + "<br>"
+                                    "toolDelta",
+                                    wrap_for_oob_swap(step_id, f"<em>{tool_call.function.name} tool call</em><br>")
                                 )
                             if tool_call.function and tool_call.function.arguments:
                                 yield sse_format(
-                                    f"toolDelta{step_id}",
-                                    tool_call.function.arguments
+                                    "toolDelta",
+                                    wrap_for_oob_swap(step_id, tool_call.function.arguments)
                                 )
                         
                         # Handle code interpreter tool calls
@@ -188,25 +193,30 @@ async def stream_response(
                             if tool_call.code_interpreter and tool_call.code_interpreter.input:
                                 logger.debug(f"Code Interpreter Input: {tool_call.code_interpreter.input}")
                                 yield sse_format(
-                                    f"toolDelta{step_id}",
-                                    str(tool_call.code_interpreter.input)
+                                    "toolDelta",
+                                    wrap_for_oob_swap(step_id, str(tool_call.code_interpreter.input))
                                 )
                             if tool_call.code_interpreter and tool_call.code_interpreter.outputs:
                                 for output in tool_call.code_interpreter.outputs:
                                     logger.debug(f"Code Interpreter Output Type: {output.type}")
                                     if output.type == "logs" and output.logs:
                                         yield sse_format(
-                                            f"toolDelta{step_id}",
-                                            str(output.logs)
+                                            "toolDelta",
+                                            wrap_for_oob_swap(step_id, str(output.logs))
                                         )
                                     elif output.type == "image" and output.image and output.image.file_id:
                                         logger.debug(f"Image Output - File ID: {output.image.file_id}")
                                         # Create the image HTML on the backend
                                         image_html = f'<img src="/assistants/{assistant_id}/files/{output.image.file_id}/content" class="code-interpreter-image">'
                                         yield sse_format(
-                                            f"imageOutput",
-                                            image_html
+                                            "imageOutput",
+                                            wrap_for_oob_swap(step_id, image_html)
                                         )
+                        elif tool_call.type == "file_search":
+                            yield sse_format(
+                                "toolDelta",
+                                wrap_for_oob_swap(step_id, "<em>File search tool call</em>")
+                            )
 
                 # If the assistant run requires an action (a tool call), break and handle it
                 if isinstance(event, ThreadRunRequiresAction):

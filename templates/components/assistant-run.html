@@ -2,7 +2,7 @@
 <div class="assistant-run" hx-swap="beforeend" 
      hx-ext="sse"     
      sse-connect="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/receive" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta" 
+     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta" 
      hx-on:htmx:sse-before-message="handleSSETextDelta(event)"
      sse-close="endStream"
      data-assistant-id="{{ assistant_id }}"
