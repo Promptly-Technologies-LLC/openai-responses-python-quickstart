@@ -55,6 +55,7 @@ async def read_setup(
     # Variable initializations
     current_tools: List[str] = []
     current_model: Optional[str] = None
+    current_instructions: Optional[str] = None
     # Populate with all models extracted from user-provided HTML, sorted
     available_models: List[str] = sorted([
         "gpt-3.5-turbo", "gpt-3.5-turbo-0125", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-16k", 
@@ -84,6 +85,7 @@ async def read_setup(
                 assistant = await client.beta.assistants.retrieve(assistant_id)
                 current_tools = [tool.type for tool in assistant.tools]
                 current_model = assistant.model  # Get the model from the assistant
+                current_instructions = assistant.instructions # Get instructions
             except Exception as e:
                 logger.error(f"Failed to retrieve assistant {assistant_id}: {e}")
                 # If we can't retrieve the assistant, proceed as if it doesn't exist
@@ -100,6 +102,7 @@ async def read_setup(
             "assistant_id": assistant_id,
             "current_tools": current_tools,
             "current_model": current_model,
+            "current_instructions": current_instructions,
             "available_models": available_models # Pass available models to template
         }
     )
@@ -109,6 +112,7 @@ async def read_setup(
 async def create_update_assistant(
     tool_types: List[ToolTypes] = Form(...),
     model: str = Form(...),
+    instructions: str = Form(...),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> RedirectResponse:
     """
@@ -122,6 +126,7 @@ async def create_update_assistant(
         assistant_id=current_assistant_id,
         tool_types=tool_types,
         model=model,
+        instructions=instructions,
         logger=logger
     )
     

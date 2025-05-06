@@ -8,8 +8,10 @@
     enctype="multipart/form-data">
   <input type="file" name="file" required>
   <input type="hidden" name="purpose" value="assistants">
-  <button type="submit" class="button">Upload File</button>
-  <span id="upload-indicator" class="htmx-indicator">Uploading...</span>
+  <div class="centered-button-container">
+    <button type="submit" class="button">Upload File</button>
+    <span id="upload-indicator" class="htmx-indicator">Uploading...</span>
+  </div>
 </form>
 
 <h3>Existing Files</h3>

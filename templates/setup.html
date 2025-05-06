@@ -53,6 +53,18 @@
                     </select>
                   </div>
                   
+                  <div style="margin-top: 15px;">
+                    <label for="instructions-input">System Prompt:</label>
+                    <textarea 
+                      name="instructions" 
+                      id="instructions-input" 
+                      class="input" 
+                      rows="4" 
+                      placeholder="e.g., You are a helpful assistant."
+                      style="width: 100%; resize: none;"
+                    >{% if current_instructions %}{{ current_instructions }}{% else %}You are a helpful assistant.{% endif %}</textarea>
+                  </div>
+
                   <p class="setupMessage" style="margin-top: 15px;">Select tools for your assistant:</p>
                   <div>
                     <label>
@@ -68,12 +80,14 @@
                       Get Weather (Custom Function)
                     </label>
                   </div>
-                  <button 
-                    type="submit"
-                    class="button"
-                  >
-                    {% if assistant_id %}Update{% else %}Create{% endif %} Assistant
-                  </button>
+                  <div class="centered-button-container">
+                    <button 
+                      type="submit"
+                      class="button"
+                    >
+                      {% if assistant_id %}Update{% else %}Create{% endif %} Assistant
+                    </button>
+                  </div>
                 </form>
               </div>
               {% if assistant_id and "file_search" in current_tools %}
