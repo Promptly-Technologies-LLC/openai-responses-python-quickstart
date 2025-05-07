@@ -44,9 +44,6 @@ function processTextDelta(sseEvent) {
 	const prev = window._streamingMarkdown.get(targetElement) || '';
 	let updatedMarkdown = prev + markdownChunk;
 
-	// Apply pending replacements that might now match with the new chunk added
-	updatedMarkdown = applyPendingReplacements(targetElement, updatedMarkdown);
-
 	window._streamingMarkdown.set(targetElement, updatedMarkdown);
 	renderMarkdown(targetElement, updatedMarkdown, markdownChunk); // Pass original chunk for fallback
 }
@@ -68,61 +65,24 @@ function processTextReplacement(sseEvent) {
 	const replacementUrl = parts[1]; // This is the actual download URL
 
 	if (!window._streamingMarkdown) {
+		// Should have been initialized by processTextDelta
 		window._streamingMarkdown = new WeakMap();
 	}
 
 	let currentMarkdown = window._streamingMarkdown.get(targetElement) || '';
+	
+	// Regex to find the markdown link URL part: (sandbox:/path/to/file)
+	const regex = new RegExp(`\\(\s*${escapeRegExp(textToReplace)}\s*\\)`, 'g');
 
-	const markdownPatternToReplace = `(${escapeRegExp(textToReplace)})`;
-	const markdownReplacementString = `(${replacementUrl})`;
-
-	if (currentMarkdown.includes(textToReplace)) { // Check if the raw sandbox path is present
-		// More robust: replace `(sandbox:/path)` with `(our_url)`
-		// Ensure the pattern targets the URL part of a Markdown link
-		const regex = new RegExp(`\\(\s*${escapeRegExp(textToReplace)}\s*\\)`, 'g');
-		if (regex.test(currentMarkdown)) {
-			currentMarkdown = currentMarkdown.replace(regex, `(${replacementUrl})`);
-			console.log(`Applied replacement: ${textToReplace} -> ${replacementUrl}`);
-			window._streamingMarkdown.set(targetElement, currentMarkdown);
-			renderMarkdown(targetElement, currentMarkdown, ''); // Re-render the whole thing
-		} else {
-			console.warn(`Sandbox path '${textToReplace}' found, but not in typical markdown link format (url). Queuing replacement.`);
-			addPendingReplacement(targetElement, textToReplace, replacementUrl);
-		}
+	if (regex.test(currentMarkdown)) {
+		currentMarkdown = currentMarkdown.replace(regex, `(${replacementUrl})`);
+		console.log(`Applied replacement: ${textToReplace} -> ${replacementUrl}`);
+		window._streamingMarkdown.set(targetElement, currentMarkdown);
+		renderMarkdown(targetElement, currentMarkdown, ''); // Re-render the whole thing
 	} else {
-		console.warn(`Text to replace '${textToReplace}' not found in current markdown. Queuing replacement. Markdown:`, currentMarkdown.substring(0, 200));
-		addPendingReplacement(targetElement, textToReplace, replacementUrl);
+		console.warn(`Text to replace '${textToReplace}' (in markdown link format) not found in current markdown. Markdown state:`, currentMarkdown.substring(0, 300));
+        // If synchronous handling is guaranteed, this path implies an issue or mismatch.
 	}
-}
-
-function addPendingReplacement(targetElement, textToReplace, replacementUrl) {
-	if (!targetElement._pendingReplacements) {
-		targetElement._pendingReplacements = [];
-	}
-	// Avoid adding duplicate pending replacements
-	if (!targetElement._pendingReplacements.some(p => p.find === textToReplace && p.replaceWith === replacementUrl)) {
-		targetElement._pendingReplacements.push({ find: textToReplace, replaceWith: replacementUrl });
-	}
-}
-
-function applyPendingReplacements(targetElement, markdown) {
-	if (targetElement._pendingReplacements && targetElement._pendingReplacements.length > 0) {
-		let madeReplacement = false;
-		targetElement._pendingReplacements.forEach(p => {
-			const regex = new RegExp(`\\(\s*${escapeRegExp(p.find)}\s*\\)`, 'g');
-			if (regex.test(markdown)) {
-				markdown = markdown.replace(regex, `(${p.replaceWith})`);
-				console.log(`Applied PENDING replacement: ${p.find} -> ${p.replaceWith}`);
-				p.applied = true;
-				madeReplacement = true;
-			}
-		});
-		targetElement._pendingReplacements = targetElement._pendingReplacements.filter(p => !p.applied);
-		if (madeReplacement) {
-			window._streamingMarkdown.set(targetElement, markdown); // Update map if changes made
-		}
-	}
-	return markdown;
 }
 
 // Helper to parse OOB swap HTML and extract target and content
@@ -161,18 +121,15 @@ function parseOobSwap(oobHTML, eventTypeForLogging) {
 
 // Helper to escape string for use in RegExp
 function escapeRegExp(string) {
-	return string.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&'); // $& means the whole matched string
+	return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
 // Extracted rendering logic
 function renderMarkdown(targetElement, markdownToRender, fallbackChunkOnError) {
-	// Ensure pending replacements are applied one last time before rendering
-	markdownToRender = applyPendingReplacements(targetElement, markdownToRender);
-	window._streamingMarkdown.set(targetElement, markdownToRender); // Update with potentially replaced markdown
+	window._streamingMarkdown.set(targetElement, markdownToRender); 
 
 	if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
 		console.error("marked.js or DOMPurify not loaded.");
-		// Simple text append if libraries missing, try to use the full accumulated string
 		targetElement.textContent = window._streamingMarkdown.get(targetElement) || fallbackChunkOnError;
 		return;
 	}
@@ -180,30 +137,23 @@ function renderMarkdown(targetElement, markdownToRender, fallbackChunkOnError) {
 		const renderer = new marked.Renderer();
 		renderer.link = ({ href, title, text }) => {
 			const titleAttr = title ? ` title="${title}"` : '';
-			// Ensure link text is also sanitized if it contains HTML-like characters,
-			// though marked.parse usually handles this for 'text'.
-			// DOMPurify will sanitize the entire output anyway.
 			return `<a target="_blank" rel="noopener noreferrer" href="${href}"${titleAttr}>${text}</a>`;
 		};
 		const rawHtml = marked.parse(markdownToRender, { renderer });
 		const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
 			USE_PROFILES: { html: true },
-			// Consider adding target="_blank" to all generated links if not handled by renderer
-			// ADD_ATTR: ['target'], // This would add target to all elements, too broad.
-			// Instead, ensure renderer adds target="_blank"
 		});
 		targetElement.innerHTML = sanitizedHtml;
 
 		const messagesContainer = document.getElementById('messages');
 		if (messagesContainer) {
-			const isScrolledToBottom = messagesContainer.scrollHeight - messagesContainer.clientHeight <= messagesContainer.scrollTop + 10; // Add some tolerance
+			const isScrolledToBottom = messagesContainer.scrollHeight - messagesContainer.clientHeight <= messagesContainer.scrollTop + 10; 
 			if (isScrolledToBottom) {
 				messagesContainer.scrollTop = messagesContainer.scrollHeight;
 			}
 		}
 	} catch (e) {
 		console.error("Error processing markdown:", e);
-		// Fallback on error: append raw chunk or full markdown to existing text content
 		targetElement.textContent = (window._streamingMarkdown.get(targetElement) || '') + (fallbackChunkOnError || '');
 	}
 }
