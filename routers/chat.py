@@ -15,12 +15,13 @@ from openai.types.beta import AssistantStreamEvent
 from openai.types.beta.threads.run import RequiredAction
 from openai.types.beta.threads.message_content_delta import MessageContentDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
+from openai.types.beta.threads.text_delta import TextDelta
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, Form
 
 import json
 
-from routers import files as files_router
+from routers.files import router as files_router
 from utils.custom_functions import get_weather, post_tool_outputs
 from utils.sse import sse_format
 from utils.streaming import AssistantStreamMetadata
@@ -123,37 +124,60 @@ async def stream_response(
                     )
 
                 if isinstance(event, ThreadMessageDelta) and event.data.delta.content:
-                    content: MessageContentDelta = event.data.delta.content[0]
-                    if isinstance(content, TextDeltaBlock) and content.text and content.text.value:
+                    delta_content_item: MessageContentDelta = event.data.delta.content[0]
+                    if isinstance(delta_content_item, TextDeltaBlock) and delta_content_item.text:
                         step_id = event.data.id
-                        text_value = content.text.value
-                        annotations = content.text.annotations
-                        
-                        # Check for file citation annotations
+                        text_delta: TextDelta = delta_content_item.text
+                        current_delta_text_value: Optional[str] = text_delta.value
+                        annotations = text_delta.annotations
+
+                        # This will be the text actually sent in textDelta
+                        final_text_for_this_delta = current_delta_text_value
+
                         if annotations:
-                            logger.debug(f"Annotation found: {annotations}")
                             for annotation in annotations:
+                                # Handle file_citation (user-uploaded files for retrieval tool)
                                 if annotation.type == 'file_citation' and hasattr(annotation, 'file_citation') and annotation.file_citation:
-                                    match = re.search(r'【.*?†(.*?)】', text_value)
-                                    if match:
-                                        file_name = match.group(1)
-                                        # Manually construct the URL
-                                        file_url = f'/assistants/{assistant_id}/files/{file_name}'
-                                        text_value = f'[†]({file_url})'
-                                        logger.debug(f"Replacing citation with link: {text_value}")
+                                    # Replace the file citation placeholder with our application's download URL for the cited file
+                                    if current_delta_text_value:
+                                        match = re.search(r'【.*?†(.*?)】', current_delta_text_value)
+                                        if match:
+                                            file_name_in_citation = match.group(1)
+                                            # URL for user-uploaded files, served by filename by our app
+                                            file_url = files_router.url_path_for('download_assistant_file', assistant_id=assistant_id, file_name=file_name_in_citation)
+                                            # Replace the placeholder within this delta's text value
+                                            final_text_for_this_delta = current_delta_text_value.replace(match.group(0), f'[†]({file_url})')
+                                            logger.debug(f"Replaced file citation placeholder in delta with link: {final_text_for_this_delta}")
+                                        else:
+                                            logger.warning(f"File citation annotation present, but pattern not found in delta text: '{current_delta_text_value}'")
                                     else:
-                                        # Handle error: pattern not found in the text
-                                        logger.warning(f"Could not extract filename from citation text: {text_value}")
-                                        file_name = None # Indicate failure
-                                    
-                                    # Assuming one citation per delta for now
-                                    break 
-                        
-                        sse_data = wrap_for_oob_swap(step_id, text_value)
-                        yield sse_format(
-                            "textDelta",
-                            sse_data
-                        )
+                                        # This case shouldn't occur
+                                        logger.warning(f"File citation annotation found, but text_delta.value is unexpectedly None.")
+
+                                # Handle file_path (code interpreter generated files)
+                                elif annotation.type == 'file_path' and hasattr(annotation, 'file_path') and annotation.file_path and annotation.file_path.file_id:
+                                    file_id = annotation.file_path.file_id
+                                    # annotation.text is the "key" for replacement (e.g., "sandbox:/mnt/data/file.csv")
+                                    sandbox_link_text_in_markdown = annotation.text 
+
+                                    # We will replace it with our app's download URL for the OpenAI-hosted file
+                                    download_url = files_router.url_path_for(
+                                        'download_openai_file', assistant_id=assistant_id, file_id=file_id
+                                    )
+
+                                    replacement_payload = f"{sandbox_link_text_in_markdown}|{download_url}"
+                                    # Use step_id (message_id) for OOB targeting the correct message container
+                                    sse_replacement_data = wrap_for_oob_swap(step_id, replacement_payload)
+                                    yield sse_format("textReplacement", sse_replacement_data)
+                                    logger.debug(f"Sent textReplacement event for {sandbox_link_text_in_markdown} with {download_url}")
+
+                                    break
+
+                        # Only send SSE if there's a non-None text value to transmit
+                        if final_text_for_this_delta is not None:
+                            # Use step_id (message_id) for OOB targeting the correct message container
+                            sse_data = wrap_for_oob_swap(step_id, final_text_for_this_delta)
+                            yield sse_format("textDelta", sse_data)
 
                 if isinstance(event, ThreadRunStepCreated) and event.data.type == "tool_calls":
                     logger.debug(f"Tool Call Created - Data: {str(event.data)}")
@@ -191,14 +215,12 @@ async def stream_response(
                         # Handle code interpreter tool calls
                         elif tool_call.type == "code_interpreter":
                             if tool_call.code_interpreter and tool_call.code_interpreter.input:
-                                logger.debug(f"Code Interpreter Input: {tool_call.code_interpreter.input}")
                                 yield sse_format(
                                     "toolDelta",
                                     wrap_for_oob_swap(step_id, str(tool_call.code_interpreter.input))
                                 )
                             if tool_call.code_interpreter and tool_call.code_interpreter.outputs:
                                 for output in tool_call.code_interpreter.outputs:
-                                    logger.debug(f"Code Interpreter Output Type: {output.type}")
                                     if output.type == "logs" and output.logs:
                                         yield sse_format(
                                             "toolDelta",

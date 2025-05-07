@@ -215,22 +215,24 @@ async def delete_file(
 
 # --- Streaming file content routes ---
 
+
 @router.get("/{file_name}")
 async def download_assistant_file(
     assistant_id: str = Path(..., description="The ID of the Assistant"),
     file_name: str = Path(..., description="The name of the file to retrieve")
 ) -> FileResponse:
-    """Serves an assistant file stored locally in the uploads directory."""
+    """This endpoint retrieves files uploaded TO openai as file search inputs
+    and stored locally in the uploads directory (since OpenAI doesn't serve
+    them for download)."""
     return retrieve_file(file_name)
 
 
-# This endpoint retrieves files uploaded TO openai (e.g., code interpreter output)
-# Keep it separate for clarity
 @router.get("/{file_id}/openai_content")
 async def download_openai_file(
     file_id: str = Path(..., description="The ID of the file stored in OpenAI"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
+    """This endpoint retrieves files created by the code interpreter"""
     try:
         file = await client.files.retrieve(file_id)
         file_content = await client.files.content(file_id)
@@ -241,7 +243,7 @@ async def download_openai_file(
         # Use stream_file_content helper
         return StreamingResponse(
             stream_file_content(file_content.content), # Assuming stream_file_content handles bytes
-            headers={"Content-Disposition": f'attachment; filename="{file.filename or file_id}"'} # Use file_id as fallback filename
+            headers={"Content-Disposition": f'attachment; filename="{file.filename or file_id}"'}
         )
     except Exception as e:
         logger.error(f"Error downloading file {file_id} from OpenAI: {e}")
