@@ -214,11 +214,17 @@ async def stream_response(
                         
                         # Handle code interpreter tool calls
                         elif tool_call.type == "code_interpreter":
-                            if tool_call.code_interpreter and tool_call.code_interpreter.input:
-                                yield sse_format(
-                                    "toolDelta",
-                                    wrap_for_oob_swap(step_id, str(tool_call.code_interpreter.input))
-                                )
+                            if tool_call.code_interpreter and tool_call.code_interpreter.input is not None:
+                                if tool_call.code_interpreter.input == "":
+                                    yield sse_format(
+                                        "toolDelta",
+                                        wrap_for_oob_swap(step_id, "<em>Code Interpreter tool call</em><br>")
+                                    )
+                                else:
+                                    yield sse_format(
+                                        "toolDelta",
+                                        wrap_for_oob_swap(step_id, str(tool_call.code_interpreter.input))
+                                    )
                             if tool_call.code_interpreter and tool_call.code_interpreter.outputs:
                                 for output in tool_call.code_interpreter.outputs:
                                     if output.type == "logs" and output.logs:
