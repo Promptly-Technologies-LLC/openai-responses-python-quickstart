@@ -228,9 +228,11 @@ async def stream_response(
                             if tool_call.code_interpreter and tool_call.code_interpreter.outputs:
                                 for output in tool_call.code_interpreter.outputs:
                                     if output.type == "logs" and output.logs:
+                                        # Replace "\n" in the logs with "\n> " to format it as console output
+                                        output_logs = "\n\n> " + str(output.logs).strip().replace("\n", "\n> ")
                                         yield sse_format(
                                             "toolDelta",
-                                            wrap_for_oob_swap(step_id, str(output.logs))
+                                            wrap_for_oob_swap(step_id, output_logs)
                                         )
                                     elif output.type == "image" and output.image and output.image.file_id:
                                         logger.debug(f"Image Output - File ID: {output.image.file_id}")
