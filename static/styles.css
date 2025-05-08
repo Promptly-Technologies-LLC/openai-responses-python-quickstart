@@ -375,6 +375,7 @@ pre {
 
 .inputForm {
   display: flex;
+  align-items: flex-end;
   width: 100%;
   padding: 10px;
   padding-bottom: 40px;
@@ -389,6 +390,11 @@ pre {
   border: 2px solid transparent;
   font-size: 1em;
   background-color: #efefef;
+  resize: none; /* Prevent manual resize */
+  overflow-y: hidden; /* Hide scrollbar */
+  min-height: calc(1em + 32px + 4px); /* font-size + padding + border */
+  height: auto; /* Allow it to grow */
+  line-height: 1.5; /* Adjust for better multi-line readability */
 }
 
 .input:focus {
@@ -403,6 +409,7 @@ pre {
   color: white;
   border: none;
   font-size: 1em;
+  height: calc(1em + 32px + 4px); /* font-size + padding + border */
   border-radius: 60px; /* Removed duplicate border-radius property */
 }
 

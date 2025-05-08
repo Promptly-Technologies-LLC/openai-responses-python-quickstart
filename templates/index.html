@@ -25,15 +25,16 @@
           </div>
           <form id="chatForm" class="inputForm clearfix"
                 hx-on::after-request="this.reset()">
-            <input
-              type="text"
+            <textarea
               class="input"
               name="userInput"
               placeholder="Enter your question"
               id="userInput"
               autocomplete="off"
+              rows="1" {# Start with one row, will expand with CSS #}
+              oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
               required
-            />
+            ></textarea>
             <button
               type="submit"
               class="button"
