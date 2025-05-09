@@ -1,7 +1,5 @@
-import os
 import logging
 from typing import Literal
-from dotenv import load_dotenv
 from fastapi import (
     APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form
 )
@@ -15,13 +13,6 @@ logger = logging.getLogger("uvicorn.error")
 
 # Setup Jinja2 templates
 templates = Jinja2Templates(directory="templates")
-
-# Get assistant ID from environment variables
-load_dotenv(override=True)
-assistant_id_env = os.getenv("ASSISTANT_ID")
-if not assistant_id_env:
-    raise ValueError("ASSISTANT_ID environment variable not set")
-default_assistant_id: str = assistant_id_env
 
 router = APIRouter(
     prefix="/assistants/{assistant_id}/files",
