@@ -33,6 +33,7 @@
               autocomplete="off"
               rows="1" {# Start with one row, will expand with CSS #}
               oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+              hx-on:keydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.querySelector('button[type=submit]').click(); }"
               required
             ></textarea>
             <button
