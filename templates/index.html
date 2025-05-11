@@ -37,6 +37,7 @@
               required
             ></textarea>
             <button
+              id="sendButton"
               type="submit"
               class="button"
               hx-post="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/send"
@@ -44,7 +45,10 @@
               hx-swap="beforeend"
               {% if inputDisabled %}disabled{% endif %}
             >
-              Send
+              <span class="button__text">Send</span>
+              <span class="button__loader" style="display: none;">
+                <span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>
+              </span>
             </button>
           </form>
         </div>

@@ -4,13 +4,21 @@ window._streamingMarkdown = new WeakMap();
 // Main SSE event handler: called by HTMX for events listed in sse-swap if not handled by default HTMX swap
 // or for all events if hx-on:htmx:sse-before-message is used.
 function handleCustomSseEvents(evt) {
-	const originalSSEEvent = evt.detail;
+	const originalSSEEvent = evt.detail; // This is {data: "...", type: "...", lastEventId: "..."}
+	// const sendButton = document.getElementById('sendButton'); // sendButton not directly needed here anymore for endStream
+
+	// Explicitly check for endStream
+	if (originalSSEEvent.type === 'endStream') {
+        console.log("handleCustomSseEvents: Saw endStream event. Data:", originalSSEEvent.data, ". HTMX will handle sse-close.");
+		// This event is primarily for sse-close. No special action (like re-enabling button) needed here.
+		// HTMX will see the 'endStream' event name based on sse-close attribute and then dispatch 'htmx:sseClose'.
+		return; // Return as endStream is not for typical sse-swap content handling within this function.
+	}
+
+	// For other events that are supposed to carry data for swapping:
 	if (!originalSSEEvent || !originalSSEEvent.data) {
-		// For endStream, originalSSEEvent.data might be null or empty, which is fine.
-		// We only care about events that carry data for custom processing here.
-		if (originalSSEEvent.type !== 'endStream') {
-			console.warn("SSE event without data or unexpected structure:", originalSSEEvent);
-		}
+		// This condition should only be met if an event *meant* for swapping (like textDelta) is missing data.
+		console.warn(`SSE event type '${originalSSEEvent.type}' (expected data for swap) without data or unexpected structure:`, originalSSEEvent);
 		return;
 	}
 
@@ -22,8 +30,8 @@ function handleCustomSseEvents(evt) {
 		evt.preventDefault();
 		processTextReplacement(originalSSEEvent);
 	}
-	// Other event types (messageCreated, toolCallCreated, etc.) will be handled by HTMX default swap
-	// if they are listed in sse-swap and not prevented here.
+	// Other event types (messageCreated, toolCallCreated, etc.) listed in sse-swap will be handled by HTMX default swap
+	// if they are listed in sse-swap and not prevented here by evt.preventDefault().
 }
 
 function processTextDelta(sseEvent) {
@@ -157,3 +165,48 @@ function renderMarkdown(targetElement, markdownToRender, fallbackChunkOnError) {
 		targetElement.textContent = (window._streamingMarkdown.get(targetElement) || '') + (fallbackChunkOnError || '');
 	}
 }
+
+// Add event listener for form submission to disable button
+document.addEventListener('DOMContentLoaded', () => {
+	// const chatForm = document.getElementById('chatForm'); // Not directly used for button disable/enable anymore
+	const sendButton = document.getElementById('sendButton');
+    const messagesContainer = document.getElementById('messages'); // Static parent for event delegation
+
+    // Disable button just before its request is made
+    if (sendButton) {
+        sendButton.addEventListener('htmx:beforeRequest', function() {
+            // 'this' is the sendButton
+            this.disabled = true;
+            this.querySelector('.button__text').style.display = 'none';
+            this.querySelector('.button__loader').style.display = 'inline-block'; // Or 'flex' if you prefer for centering dots
+            console.log("sendButton: htmx:beforeRequest - disabled and loader shown.");
+        });
+    }
+
+    // Event delegation for htmx:sseClose and htmx:sseError on dynamically added .assistant-run
+    if (messagesContainer && sendButton) {
+        const reEnableSendButton = () => {
+            if (sendButton.disabled) {
+                sendButton.disabled = false;
+                sendButton.querySelector('.button__text').style.display = 'inline-block';
+                sendButton.querySelector('.button__loader').style.display = 'none';
+                console.log("sendButton: Re-enabled and text restored, loader hidden.");
+            }
+        };
+
+        messagesContainer.addEventListener('htmx:sseClose', function(event) {
+            // event.target will be the element with sse-connect, which is .assistant-run
+            if (event.target.classList.contains('assistant-run')) {
+                reEnableSendButton();
+                console.log("messagesContainer: htmx:sseClose on .assistant-run detected (delegated).");
+            }
+        });
+
+        messagesContainer.addEventListener('htmx:sseError', function(event) {
+            if (event.target.classList.contains('assistant-run')) {
+                reEnableSendButton();
+                console.warn("messagesContainer: htmx:sseError on .assistant-run detected (delegated).");
+            }
+        });
+    }
+});
