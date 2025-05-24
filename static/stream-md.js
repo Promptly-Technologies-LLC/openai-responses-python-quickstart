@@ -166,47 +166,28 @@ function renderMarkdown(targetElement, markdownToRender, fallbackChunkOnError) {
 	}
 }
 
-// Add event listener for form submission to disable button
-document.addEventListener('DOMContentLoaded', () => {
-	// const chatForm = document.getElementById('chatForm'); // Not directly used for button disable/enable anymore
-	const sendButton = document.getElementById('sendButton');
-    const messagesContainer = document.getElementById('messages'); // Static parent for event delegation
-
-    // Disable button just before its request is made
+// Global functions for button state management
+window.disableSendButton = function() {
+    const sendButton = document.getElementById('sendButton');
     if (sendButton) {
-        sendButton.addEventListener('htmx:beforeRequest', function() {
-            // 'this' is the sendButton
-            this.disabled = true;
-            this.querySelector('.button__text').style.display = 'none';
-            this.querySelector('.button__loader').style.display = 'inline-block'; // Or 'flex' if you prefer for centering dots
-            console.log("sendButton: htmx:beforeRequest - disabled and loader shown.");
-        });
+        sendButton.disabled = true;
+        sendButton.querySelector('.button__text').style.display = 'none';
+        sendButton.querySelector('.button__loader').style.display = 'inline-block';
+        console.log("disableSendButton: Send button disabled and loader shown.");
     }
+};
 
-    // Event delegation for htmx:sseClose and htmx:sseError on dynamically added .assistant-run
-    if (messagesContainer && sendButton) {
-        const reEnableSendButton = () => {
-            if (sendButton.disabled) {
-                sendButton.disabled = false;
-                sendButton.querySelector('.button__text').style.display = 'inline-block';
-                sendButton.querySelector('.button__loader').style.display = 'none';
-                console.log("sendButton: Re-enabled and text restored, loader hidden.");
-            }
-        };
-
-        messagesContainer.addEventListener('htmx:sseClose', function(event) {
-            // event.target will be the element with sse-connect, which is .assistant-run
-            if (event.target.classList.contains('assistant-run')) {
-                reEnableSendButton();
-                console.log("messagesContainer: htmx:sseClose on .assistant-run detected (delegated).");
-            }
-        });
-
-        messagesContainer.addEventListener('htmx:sseError', function(event) {
-            if (event.target.classList.contains('assistant-run')) {
-                reEnableSendButton();
-                console.warn("messagesContainer: htmx:sseError on .assistant-run detected (delegated).");
-            }
-        });
+window.reEnableSendButton = function() {
+    const sendButton = document.getElementById('sendButton');
+    if (sendButton && sendButton.disabled) {
+        sendButton.disabled = false;
+        sendButton.querySelector('.button__text').style.display = 'inline-block';
+        sendButton.querySelector('.button__loader').style.display = 'none';
+        console.log("reEnableSendButton: Send button re-enabled and text restored, loader hidden.");
     }
+};
+
+// Simplified DOMContentLoaded - no complex event listeners needed
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("stream-md.js: DOMContentLoaded - global button functions available.");
 });

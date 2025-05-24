@@ -24,7 +24,8 @@
             {% endfor %}
           </div>
           <form id="chatForm" class="inputForm clearfix"
-                hx-on::after-request="this.reset()">
+                hx-on::after-request="this.reset()"
+                hx-on::before-request="disableSendButton()">
             <textarea
               class="input"
               name="userInput"

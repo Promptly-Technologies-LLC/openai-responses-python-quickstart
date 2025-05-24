@@ -5,6 +5,8 @@
      sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement" 
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
+     hx-on::sse-close="reEnableSendButton()"
+     hx-on::sse-error="reEnableSendButton()"
      data-assistant-id="{{ assistant_id }}"
      data-thread-id="{{ thread_id }}">
 </div>
