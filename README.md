@@ -1,5 +1,7 @@
 # OpenAI Responses API Quickstart with Python, Jinja2, FastAPI, and HTMX
 
+🚧 Under construction 🚧
+
 A quick-start template using the OpenAI [Responses API](https://platform.openai.com/docs/api-reference/responses) with [Python](https://www.python.org/), [FastAPI](https://fastapi.tiangolo.com/), [Jinja2](https://jinja.palletsprojects.com/en/3.1.x/), and [HTMX](https://htmx.org/).
 
 ## Quickstart Setup
