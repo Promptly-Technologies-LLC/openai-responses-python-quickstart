@@ -14,11 +14,15 @@
               <form action="{{ url_for('set_openai_api_key') }}" method="POST">
                 <div class="inputWrapper">
                   <input 
-                    type="password"
+                    type="text"
                     name="api_key"
                     placeholder="sk-..."
                     required
                     class="input"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    aria-label="OpenAI API key"
                   >
                 </div>
                 <button 
@@ -29,11 +33,11 @@
                 </button>
               </form>
             </div>
-          {% else %} {# Covers missing assistant ID or user wants to update #}
+          {% else %}
               <div class="setupSection">
-                {% if assistant_id %}<h3>Update Assistant</h3>{% else %}<h3>Create Assistant</h3>{% endif %}
-                
-                <form action="{{ url_for('create_update_assistant') }}" method="POST">
+                <h3>Save App Configuration</h3>
+
+                <form action="{{ url_for('save_app_config') }}" method="POST">
                   <div>
                     <label for="model-select">Select Model:</label>
                     <select name="model" id="model-select" class="input" required>
@@ -85,12 +89,12 @@
                       type="submit"
                       class="button"
                     >
-                      {% if assistant_id %}Update{% else %}Create{% endif %} Assistant
+                      Save Configuration
                     </button>
                   </div>
                 </form>
               </div>
-              {% if assistant_id and "file_search" in current_tools %}
+              {% if "file_search" in current_tools %}
                 <div class="setupSection" style="margin-top: 20px;">
                     {% include 'components/file-viewer.html' %}
                 </div>

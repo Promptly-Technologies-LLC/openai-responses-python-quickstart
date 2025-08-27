@@ -8,7 +8,6 @@ from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from urllib.parse import quote
 
-from utils.create_assistant import create_or_update_assistant, ToolTypes
 from utils.create_assistant import update_env_file
 
 # Configure logger
@@ -20,7 +19,7 @@ load_dotenv()
 router = APIRouter(prefix="/setup", tags=["Setup"])
 templates = Jinja2Templates(directory="templates")
 
-@router.put("/api-key")
+@router.post("/api-key")
 async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
     """
     Set the OpenAI API key in the application's environment variables.
@@ -35,7 +34,8 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
         HTTPException: If there's an error updating the environment file
     """
     try:
-        update_env_file("OPENAI_API_KEY", api_key, logger)
+        safe_key = api_key.strip().replace("\r", "").replace("\n", "")
+        update_env_file("OPENAI_API_KEY", safe_key, logger)
         return RedirectResponse(url="/", headers={"HX-Redirect": "/"}, status_code=303)
     except Exception as e:
         raise HTTPException(
@@ -57,40 +57,27 @@ async def read_setup(
     current_model: Optional[str] = None
     current_instructions: Optional[str] = None
     # Populate with all models extracted from user-provided HTML, sorted
-    available_models: List[str] = sorted([
-        "gpt-3.5-turbo", "gpt-3.5-turbo-0125", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-16k", 
-        "gpt-4", "gpt-4-0125-preview", "gpt-4-0613", "gpt-4-1106-preview", 
-        "gpt-4-turbo", "gpt-4-turbo-2024-04-09", "gpt-4-turbo-preview", 
-        "gpt-4.1", "gpt-4.1-2025-04-14", "gpt-4.1-mini", "gpt-4.1-mini-2025-04-14", 
-        "gpt-4.1-nano", "gpt-4.1-nano-2025-04-14", 
-        "gpt-4.5-preview", "gpt-4.5-preview-2025-02-27", 
-        "gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-2024-08-06", "gpt-4o-2024-11-20", 
-        "gpt-4o-mini", "gpt-4o-mini-2024-07-18", 
-        "o1", "o1-2024-12-17", 
-        "o3-mini", "o3-mini-2025-01-31"
+    available_models: List[str] = sorted([ 
+        "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", 
+        "gpt-4o", "gpt-4o-mini", "o1", "o1-mini",
+        "o3", "o3-pro", "o3-mini", "o4-mini",
+        "o3-deep-research", "o4-mini-deep-research",
+        "gpt-5-chat", "gpt-5-mini", "gpt-5-nano",
+        "gpt-oss-120b", "gpt-oss-20b"
     ])
     setup_message: str = ""
 
     # Check if env variables are set
     load_dotenv(override=True)
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    assistant_id = os.getenv("ASSISTANT_ID")
-    logger.info(f"Assistant ID: {assistant_id}")
-    
+    # Load existing app config from env
+    current_model = os.getenv("RESPONSES_MODEL")
+    current_instructions = os.getenv("RESPONSES_INSTRUCTIONS")
+    enabled_tools_csv = os.getenv("ENABLED_TOOLS", "")
+    current_tools = [t.strip() for t in enabled_tools_csv.split(",") if t.strip()]
+
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."
-    else:
-        if assistant_id:
-            try:
-                assistant = await client.beta.assistants.retrieve(assistant_id)
-                current_tools = [tool.type for tool in assistant.tools]
-                current_model = assistant.model  # Get the model from the assistant
-                current_instructions = assistant.instructions # Get instructions
-            except Exception as e:
-                logger.error(f"Failed to retrieve assistant {assistant_id}: {e}")
-                # If we can't retrieve the assistant, proceed as if it doesn't exist
-                assistant_id = None
-                setup_message = "Error retrieving existing assistant. Please create a new one."
     
     return templates.TemplateResponse(
         "setup.html",
@@ -99,7 +86,6 @@ async def read_setup(
             "setup_message": setup_message,
             "status": status, # Pass status from query params
             "status_message": message_text, # Pass message from query params
-            "assistant_id": assistant_id,
             "current_tools": current_tools,
             "current_model": current_model,
             "current_instructions": current_instructions,
@@ -108,36 +94,23 @@ async def read_setup(
     )
 
 
-@router.post("/assistant")
-async def create_update_assistant(
-    tool_types: List[ToolTypes] = Form(...),
+@router.post("/config")
+async def save_app_config(
+    tool_types: List[str] = Form(default=[]),
     model: str = Form(...),
-    instructions: str = Form(...),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    instructions: str = Form(...)
 ) -> RedirectResponse:
-    """
-    Create a new assistant or update an existing one.
-    Returns the assistant ID and status of the operation.
-    """
-    current_assistant_id = os.getenv("ASSISTANT_ID")
-    action = "updated" if current_assistant_id else "created"
-    new_assistant_id = await create_or_update_assistant(
-        client=client,
-        assistant_id=current_assistant_id,
-        tool_types=tool_types,
-        model=model,
-        instructions=instructions,
-        logger=logger
-    )
-    
-    if not new_assistant_id:
-        status = "error"
-        message_text = f"Failed to {action} assistant."
-    else:
+    try:
+        update_env_file("RESPONSES_MODEL", model, logger)
+        update_env_file("RESPONSES_INSTRUCTIONS", instructions, logger)
+        enabled_tools_csv = ",".join(tool_types)
+        update_env_file("ENABLED_TOOLS", enabled_tools_csv, logger)
         status = "success"
-        message_text = f"Assistant {action} successfully."
-        
-    # URL encode the message text
+        message_text = "Configuration saved."
+    except Exception as e:
+        status = "error"
+        message_text = f"Failed to save configuration: {e}"
+
     encoded_message = quote(message_text)
     redirect_url = f"/setup/?status={status}&message_text={encoded_message}"
     return RedirectResponse(url=redirect_url, status_code=303)

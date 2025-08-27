@@ -9,20 +9,14 @@ from openai.types.vector_stores.vector_store_file import VectorStoreFile
 
 logger = logging.getLogger("uvicorn.error")
 
-# Helper function to get or create a vector store
-async def get_or_create_vector_store(assistantId: str, client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> str:
-    assistant = await client.beta.assistants.retrieve(assistantId)
-    if assistant.tool_resources and assistant.tool_resources.file_search and assistant.tool_resources.file_search.vector_store_ids:
-        return assistant.tool_resources.file_search.vector_store_ids[0]
-    vector_store = await client.vector_stores.create(name="sample-assistant-vector-store") # TODO: Make this dynamic
-    await client.beta.assistants.update(
-        assistantId,
-        tool_resources={
-            "file_search": {
-                "vector_store_ids": [vector_store.id],
-            },
-        }
-    )
+# Helper function to get or create a vector store (env-based, not assistant-bound)
+async def get_or_create_vector_store(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> str:
+    from utils.create_assistant import update_env_file
+    vs_id = os.getenv("VECTOR_STORE_ID")
+    if vs_id:
+        return vs_id
+    vector_store = await client.vector_stores.create(name="quickstart-vector-store")
+    update_env_file("VECTOR_STORE_ID", vector_store.id, logger)
     return vector_store.id
 
 
