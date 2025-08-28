@@ -1,7 +1,7 @@
 <!-- file-viewer.html -->
 <h3>Upload Files</h3>
 <form id="upload-form" 
-    hx-post="{{ url_for('upload_file', assistant_id=assistant_id) }}" 
+    hx-post="{{ url_for('upload_file') }}" 
     hx-target="#file-list-container" 
     hx-swap="outerHTML"
     hx-indicator="#upload-indicator"
@@ -16,14 +16,14 @@
 
 <h3>Existing Files</h3>
 <div id="file-list-container" 
-    hx-get="{{ url_for('list_files', assistant_id=assistant_id) }}" 
+    hx-get="{{ url_for('list_files') }}" 
     hx-trigger="load" 
     hx-swap="outerHTML">
     <p>Loading files...</p>
 </div>
 <button 
     class="button"
-    hx-get="{{ url_for('list_files', assistant_id=assistant_id) }}" 
+    hx-get="{{ url_for('list_files') }}" 
     hx-target="#file-list-container"
     hx-swap="outerHTML"
     hx-indicator="#list-indicator">

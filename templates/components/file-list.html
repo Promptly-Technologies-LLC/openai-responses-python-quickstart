@@ -16,7 +16,7 @@
                     {% endif %}
                     <button 
                         class="button deleteButton"
-                        hx-delete="{{ url_for('delete_file', assistant_id=request.path_params.assistant_id, file_id=file.id) }}"
+                        hx-delete="{{ url_for('delete_file', file_id=file.id) }}"
                         hx-target="#file-list-container"
                         hx-swap="outerHTML"
                         hx-confirm="Are you sure you want to delete {{ file.filename }}?"

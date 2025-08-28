@@ -1,12 +1,11 @@
 <!-- assistant-run.html -->
 <div class="assistant-run" hx-swap="beforeend" 
      hx-ext="sse"     
-     sse-connect="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/receive" 
+     sse-connect="/chat/{{ conversation_id }}/receive" 
      sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement" 
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
      hx-on::sse-close="reEnableSendButton()"
      hx-on::sse-error="reEnableSendButton()"
-     data-assistant-id="{{ assistant_id }}"
-     data-thread-id="{{ thread_id }}">
+     data-conversation-id="{{ conversation_id }}">
 </div>

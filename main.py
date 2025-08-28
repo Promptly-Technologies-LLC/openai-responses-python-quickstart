@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, Response, HTMLResponse
 from routers import chat, files, setup
-from utils.threads import create_thread
+from utils.conversations import create_conversation
 from fastapi.exceptions import HTTPException, RequestValidationError
 
 
@@ -76,7 +76,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Respon
 @app.get("/")
 async def read_home(
     request: Request,
-    thread_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
     messages: List[Dict[str, Any]] = []
 ) -> Response:
     logger.info("Home page requested")
@@ -84,22 +84,20 @@ async def read_home(
     # Check if environment variables are missing
     load_dotenv(override=True)
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    assistant_id = os.getenv("ASSISTANT_ID")
-    
-    if not openai_api_key or not assistant_id:
+    responses_model = os.getenv("RESPONSES_MODEL")
+    if not openai_api_key or not responses_model:
         return RedirectResponse(url=app.url_path_for("read_setup"))
-    
-    # Create a new assistant chat thread if no thread ID is provided
-    if not thread_id or thread_id == "None" or thread_id == "null":
-        thread_id = await create_thread()
+
+    # Create a new conversation if none provided
+    if not conversation_id or conversation_id == "None" or conversation_id == "null":
+        conversation_id = await create_conversation()
     
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
-            "assistant_id": assistant_id,
             "messages": messages,
-            "thread_id": thread_id
+            "conversation_id": conversation_id
         }
     )
 

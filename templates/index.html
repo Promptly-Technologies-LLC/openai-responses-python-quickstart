@@ -41,7 +41,7 @@
               id="sendButton"
               type="submit"
               class="button"
-              hx-post="/assistants/{{ assistant_id }}/messages/{{ thread_id }}/send"
+              hx-post="/chat/{{ conversation_id }}/send"
               hx-target="#messages"
               hx-swap="beforeend"
               {% if inputDisabled %}disabled{% endif %}
