@@ -1,17 +1,26 @@
 import logging
 import json
 from datetime import datetime
-from typing import AsyncGenerator, Dict, Any, Optional, cast
+from typing import AsyncGenerator, Dict, Any
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
+from openai.types.responses import (
+    ResponseCreatedEvent, ResponseOutputItemAddedEvent,
+    ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent,
+    ResponseCompletedEvent, ResponseTextDeltaEvent, ResponseRefusalDeltaEvent,
+    ResponseFileSearchCallSearchingEvent, ResponseCodeInterpreterCallInProgressEvent,
+    ResponseOutputTextAnnotationAddedEvent, ResponseContentPartAddedEvent,
+    ResponseFileSearchCallInProgressEvent, ResponseFileSearchCallCompletedEvent,
+    ResponseOutputItemDoneEvent, ResponseInProgressEvent, ResponseTextDoneEvent,
+    ResponseContentPartDoneEvent
+)
 from openai import AsyncOpenAI
 from utils.custom_functions import get_weather, post_tool_outputs, get_function_tool_def
 from utils.sse import sse_format
 
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
-logger.setLevel(logging.DEBUG)
 
 
 router: APIRouter = APIRouter(
@@ -40,7 +49,10 @@ async def send_message(
         items=[{
             "type": "message",
             "role": "user",
-            "content": [{"type": "input_text", "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"}]
+            "content": [{
+                "type": "input_text",
+                "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
+            }]
         }]
     )
 
@@ -101,50 +113,69 @@ async def stream_response(
             nonlocal response_id, current_item_id, fn_args_buffer
             async with s as events:
                 async for event in events:
-                    etype = getattr(event, "type", None)
-                    if not etype:
+
+                    if isinstance(event, ResponseCreatedEvent):
+                        response_id = event.response.id
+
+                    elif isinstance(event, ResponseInProgressEvent) or \
+                        isinstance(event, ResponseFileSearchCallInProgressEvent) or \
+                        isinstance(event, ResponseFileSearchCallCompletedEvent) or \
+                        isinstance(event, ResponseOutputItemDoneEvent) or \
+                        isinstance(event, ResponseTextDoneEvent) or \
+                        isinstance(event, ResponseContentPartDoneEvent) or \
+                        isinstance(event, ResponseOutputItemDoneEvent):
                         continue
+                    
+                    elif isinstance(event, ResponseFileSearchCallSearchingEvent) or isinstance(event, ResponseCodeInterpreterCallInProgressEvent):
+                        tool = "file search" if isinstance(event, ResponseFileSearchCallSearchingEvent) else "code interpreter"
+                        yield sse_format(
+                                "toolCallCreated",
+                                templates.get_template('components/assistant-step.html').render(
+                                    step_type='toolCall',
+                                    step_id=event.item_id,
+                                    content=f"Calling {tool} tool..."
+                                )
+                            )
 
-                    if etype == "response.created":
-                        rid_opt: Optional[str] = getattr(event, "id", None)
-                        resp_obj = getattr(event, "response", None)
-                        resp_id_opt: Optional[str] = getattr(resp_obj, "id", None) if resp_obj else None
-                        response_id = cast(str, (rid_opt or resp_id_opt or ""))
-
-                    elif etype == "response.output_item.added":
-                        item = getattr(event, "item", None)
-                        item_id = getattr(item, "id", "") if item else ""
-                        if item_id:
-                            current_item_id = item_id
+                    elif isinstance(event, ResponseOutputItemAddedEvent):
+                        # Skip reasoning steps by default (later make this configurable and/or mount a thinking indicator)
+                        if event.item.id and event.item.type in ["message", "output_text"]:
+                            current_item_id = event.item.id
                             yield sse_format(
                                 "messageCreated",
                                 templates.get_template("components/assistant-step.html").render(
                                     step_type="assistantMessage",
-                                    step_id=item_id
+                                    step_id=event.item.id
                                 )
                             )
 
-                    elif etype == "response.output_text.delta":
-                        # Handle inline citations and file links in text deltas
-                        delta = getattr(event, "delta", None)
-                        text_value = str(delta) if delta is not None else None
-                        if text_value and current_item_id:
-                            # TODO: update to match new pattern, https://platform.openai.com/docs/guides/tools-code-interpreter#work-with-files
-                            # Replace patterns like 【...†filename】 with app download links
-                            try:
-                                import re
-                                match = re.search(r"【.*?†(.*?)】", text_value)
-                                if match:
-                                    file_name_in_citation = match.group(1)
-                                    file_url = f"/files/{file_name_in_citation}"
-                                    text_value = text_value.replace(match.group(0), f"[†]({file_url})")
-                            except Exception:
-                                pass
-                            yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, text_value))
+                    elif isinstance(event, ResponseContentPartAddedEvent):
+                        if event.item_id and event.part.type in ["output_text", "refusal"]:
+                            current_item_id = event.item_id
+                            yield sse_format(
+                                "messageCreated",
+                                templates.get_template("components/assistant-step.html").render(
+                                    step_type="assistantMessage",
+                                    step_id=event.item_id
+                                )
+                            )
 
-                    elif etype == "response.function_call_arguments.delta":
-                        tool_call_id = getattr(event, "tool_call_id", "")
-                        delta = getattr(event, "delta", "")
+                    elif isinstance(event, ResponseTextDeltaEvent) or isinstance(event, ResponseRefusalDeltaEvent):
+                        if event.delta and current_item_id:
+                            yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
+
+                    elif isinstance(event, ResponseOutputTextAnnotationAddedEvent):
+                        if event.annotation and current_item_id:
+                            if event.annotation["type"] == "file_citation":
+                                filename = event.annotation["filename"]
+                                citation = "(" + filename + ")"
+                            else:
+                                logger.error(f"Unhandled annotation type: {event.annotation['type']}")
+                            yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, citation))
+
+                    elif isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
+                        tool_call_id = event.item_id
+                        delta = event.delta
                         if tool_call_id:
                             # Emit a toolCallCreated once per tool_call_id
                             if tool_call_id not in fn_args_buffer:
@@ -160,8 +191,8 @@ async def stream_response(
                             if current_item_id:
                                 yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
-                    elif etype == "response.function_call_arguments.done":
-                        tool_call_id = getattr(event, "tool_call_id", "")
+                    elif isinstance(event, ResponseFunctionCallArgumentsDoneEvent):
+                        tool_call_id = event.item_id
                         args_json = fn_args_buffer.get(tool_call_id, "{}")
                         # Execute function
                         try:
@@ -186,8 +217,11 @@ async def stream_response(
                         except Exception as err:
                             yield sse_format("toolOutput", f"Function error: {err}")
 
-                    elif etype == "response.completed":
+                    elif isinstance(event, ResponseCompletedEvent):
                         yield sse_format("endStream", "DONE")
+                    
+                    else:
+                        logger.error(f"Unhandled event: {event}")
 
         async for sse in iterate_stream(stream):
             yield sse

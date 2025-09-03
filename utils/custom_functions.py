@@ -35,7 +35,7 @@ def get_function_tool_def() -> Dict[str, Any]:
             "properties": {
                 "location": {
                     "type": "string",
-                    "description": "The city and state e.g. San Francisco, CA"
+                    "description": "The city and state, e.g., 'San Francisco, CA'"
                 },
                 "dates": {
                     "type": "array",
