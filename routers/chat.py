@@ -220,6 +220,7 @@ async def stream_response(
                             yield sse_format("toolOutput", f"Function error: {err}")
 
                     elif isinstance(event, ResponseCompletedEvent):
+                        yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\" style=\"display: none;\"></span>")
                         yield sse_format("endStream", "DONE")
                     
                     else:
