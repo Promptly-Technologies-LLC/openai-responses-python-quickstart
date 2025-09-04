@@ -20,6 +20,7 @@ from openai.types.responses import (
 from openai import AsyncOpenAI
 from utils.custom_functions import get_weather, post_tool_outputs, get_function_tool_def
 from utils.sse import sse_format
+from urllib.parse import quote as url_quote
 
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
@@ -106,13 +107,13 @@ async def stream_response(
             stream=True
         )
 
-        response_id: str = ""
-        current_item_id: str = ""
-        # Accumulate function call args per tool_call_id
-        fn_args_buffer: Dict[str, str] = {}
+        async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
+            current_item_id: str = ""
+            # Accumulate function call args per tool_call_id
+            fn_args_buffer: Dict[str, str] = {}
+            # Accumulate unique annotations (for deduplication)
+            unique_annotations: set[str] = set()
 
-        async def iterate_stream(s) -> AsyncGenerator[str, None]:
-            nonlocal response_id, current_item_id, fn_args_buffer
             async with s as events:
                 async for event in events:
 
@@ -164,10 +165,15 @@ async def stream_response(
                         if event.annotation and current_item_id:
                             if event.annotation["type"] == "file_citation":
                                 filename = event.annotation["filename"]
-                                citation = "(" + filename + ")"
+                                # Emit a literal HTML anchor to avoid markdown parsing edge cases
+                                encoded_filename = url_quote(filename, safe="")
+                                file_url_path = f"/files/{encoded_filename}"
+                                citation = f"(<a href=\"{file_url_path}\">†</a>)"
+                                logger.debug(f"Citation: {citation}")
+                                unique_annotations.add(citation)
+                                yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
                             else:
                                 logger.error(f"Unhandled annotation type: {event.annotation['type']}")
-                            yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, citation))
 
                     elif isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
                         tool_call_id = event.item_id
@@ -208,7 +214,7 @@ async def stream_response(
                                 tool_call_id=tool_call_id,
                                 output=json.dumps(weather_output)
                             )
-                            async for out in iterate_stream(next_stream):
+                            async for out in iterate_stream(next_stream, response_id):
                                 yield out
                         except Exception as err:
                             yield sse_format("toolOutput", f"Function error: {err}")

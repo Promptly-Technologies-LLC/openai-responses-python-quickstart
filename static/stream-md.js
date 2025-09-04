@@ -26,9 +26,6 @@ function handleCustomSseEvents(evt) {
 	if (originalSSEEvent.type === 'textDelta') {
 		evt.preventDefault();
 		processTextDelta(originalSSEEvent);
-	} else if (originalSSEEvent.type === 'textReplacement') {
-		evt.preventDefault();
-		processTextReplacement(originalSSEEvent);
 	}
 	// Other event types (messageCreated, toolCallCreated, etc.) listed in sse-swap will be handled by HTMX default swap
 	// if they are listed in sse-swap and not prevented here by evt.preventDefault().
@@ -56,43 +53,6 @@ function processTextDelta(sseEvent) {
 	renderMarkdown(targetElement, updatedMarkdown, markdownChunk); // Pass original chunk for fallback
 }
 
-function processTextReplacement(sseEvent) {
-	const oobHTML = sseEvent.data;
-	const { targetElement, payload } = parseOobSwap(oobHTML, "textReplacement");
-
-	if (!targetElement || !payload) {
-		return;
-	}
-
-	const parts = payload.split('|');
-	if (parts.length !== 2) {
-		console.error("Invalid payload for textReplacement:", payload);
-		return;
-	}
-	const textToReplace = parts[0]; // This is "sandbox:/path/to/file"
-	const replacementUrl = parts[1]; // This is the actual download URL
-
-	if (!window._streamingMarkdown) {
-		// Should have been initialized by processTextDelta
-		window._streamingMarkdown = new WeakMap();
-	}
-
-	let currentMarkdown = window._streamingMarkdown.get(targetElement) || '';
-	
-	// Regex to find the markdown link URL part: (sandbox:/path/to/file)
-	const regex = new RegExp(`\\(\s*${escapeRegExp(textToReplace)}\s*\\)`, 'g');
-
-	if (regex.test(currentMarkdown)) {
-		currentMarkdown = currentMarkdown.replace(regex, `(${replacementUrl})`);
-		console.log(`Applied replacement: ${textToReplace} -> ${replacementUrl}`);
-		window._streamingMarkdown.set(targetElement, currentMarkdown);
-		renderMarkdown(targetElement, currentMarkdown, ''); // Re-render the whole thing
-	} else {
-		console.warn(`Text to replace '${textToReplace}' (in markdown link format) not found in current markdown. Markdown state:`, currentMarkdown.substring(0, 300));
-        // If synchronous handling is guaranteed, this path implies an issue or mismatch.
-	}
-}
-
 // Helper to parse OOB swap HTML and extract target and content
 function parseOobSwap(oobHTML, eventTypeForLogging) {
 	const parser = new DOMParser();
@@ -105,7 +65,7 @@ function parseOobSwap(oobHTML, eventTypeForLogging) {
 	}
 
 	const swapOobAttr = oobElement.getAttribute('hx-swap-oob');
-	const content = oobElement.innerHTML; // For textDelta, this is markdownChunk; for textReplacement, this is payload
+	const content = oobElement.innerHTML; // For textDelta, this is markdownChunk
 
 	if (!swapOobAttr) {
 		console.warn(`${eventTypeForLogging} message did not contain hx-swap-oob:`, oobHTML);
@@ -142,16 +102,22 @@ function renderMarkdown(targetElement, markdownToRender, fallbackChunkOnError) {
 		return;
 	}
 	try {
-		const renderer = new marked.Renderer();
-		renderer.link = ({ href, title, text }) => {
-			const titleAttr = title ? ` title="${title}"` : '';
-			return `<a target="_blank" rel="noopener noreferrer" href="${href}"${titleAttr}>${text}</a>`;
-		};
-		const rawHtml = marked.parse(markdownToRender, { renderer });
+		const rawHtml = marked.parse(markdownToRender);
 		const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
 			USE_PROFILES: { html: true },
 		});
 		targetElement.innerHTML = sanitizedHtml;
+
+		// Ensure links open in a new tab without altering hrefs
+		try {
+			const anchors = targetElement.querySelectorAll('a[href]');
+			anchors.forEach((a) => {
+				a.setAttribute('target', '_blank');
+				a.setAttribute('rel', 'noopener noreferrer');
+			});
+		} catch (linkErr) {
+			console.warn('Error post-processing links:', linkErr);
+		}
 
 		const messagesContainer = document.getElementById('messages');
 		if (messagesContainer) {

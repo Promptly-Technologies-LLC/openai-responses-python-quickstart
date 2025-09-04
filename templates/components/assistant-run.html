@@ -2,7 +2,7 @@
 <div class="assistant-run" hx-swap="beforeend" 
      hx-ext="sse"     
      sse-connect="/chat/{{ conversation_id }}/receive" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement" 
+     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta"
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
      hx-on::sse-close="reEnableSendButton()"
