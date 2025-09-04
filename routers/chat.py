@@ -1,3 +1,5 @@
+# TODO: let's use match case for the event types rather than elifs.
+
 import logging
 import json
 from datetime import datetime
@@ -124,6 +126,7 @@ async def stream_response(
                         isinstance(event, ResponseTextDoneEvent) or \
                         isinstance(event, ResponseContentPartDoneEvent) or \
                         isinstance(event, ResponseOutputItemDoneEvent):
+                        # Don't need to handle "in progress" or intermediate "done" events
                         continue
                     
                     elif isinstance(event, ResponseFileSearchCallSearchingEvent) or isinstance(event, ResponseCodeInterpreterCallInProgressEvent):
@@ -150,15 +153,8 @@ async def stream_response(
                             )
 
                     elif isinstance(event, ResponseContentPartAddedEvent):
-                        if event.item_id and event.part.type in ["output_text", "refusal"]:
-                            current_item_id = event.item_id
-                            yield sse_format(
-                                "messageCreated",
-                                templates.get_template("components/assistant-step.html").render(
-                                    step_type="assistantMessage",
-                                    step_id=event.item_id
-                                )
-                            )
+                        # This event indicates the start of annotations; skip creating a new assistantMessage
+                        continue
 
                     elif isinstance(event, ResponseTextDeltaEvent) or isinstance(event, ResponseRefusalDeltaEvent):
                         if event.delta and current_item_id:
