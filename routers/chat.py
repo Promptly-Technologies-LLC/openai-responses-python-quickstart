@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import AsyncGenerator, Dict, Any
 from fastapi.templating import Jinja2Templates
-from fastapi import APIRouter, Form, Depends, Request
+from fastapi import APIRouter, Form, Depends, Request, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai.types.responses import (
     ResponseCreatedEvent, ResponseOutputItemAddedEvent,
@@ -18,7 +18,7 @@ from openai.types.responses import (
     ResponseContentPartDoneEvent
 )
 from openai import AsyncOpenAI
-from utils.custom_functions import get_weather, post_tool_outputs, get_function_tool_def
+from utils.custom_functions import get_weather, get_function_tool_def
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
 
@@ -108,8 +108,9 @@ async def stream_response(
         )
 
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
+            nonlocal model, conversation_id, tools, instructions
             current_item_id: str = ""
-            # Accumulate function call args per tool_call_id
+            # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
             # Accumulate unique annotations (for deduplication)
             unique_annotations: set[str] = set()
@@ -176,26 +177,25 @@ async def stream_response(
                                 logger.error(f"Unhandled annotation type: {event.annotation['type']}")
 
                     elif isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
-                        tool_call_id = event.item_id
+                        current_item_id = event.item_id
                         delta = event.delta
-                        if tool_call_id:
-                            # Emit a toolCallCreated once per tool_call_id
-                            if tool_call_id not in fn_args_buffer:
+                        if current_item_id:
+                            # Emit a toolCallCreated once per current_item_id
+                            if current_item_id not in fn_args_buffer:
                                 yield sse_format(
                                     "toolCallCreated",
                                     templates.get_template('components/assistant-step.html').render(
                                         step_type='toolCall',
-                                        step_id=current_item_id or tool_call_id
+                                        step_id=current_item_id
                                     )
                                 )
-                                fn_args_buffer[tool_call_id] = ""
-                            fn_args_buffer[tool_call_id] = fn_args_buffer.get(tool_call_id, "") + str(delta)
-                            if current_item_id:
-                                yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
+                                fn_args_buffer[current_item_id] = ""
+                            fn_args_buffer[current_item_id] += str(delta)
+                            yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
                     elif isinstance(event, ResponseFunctionCallArgumentsDoneEvent):
-                        tool_call_id = event.item_id
-                        args_json = fn_args_buffer.get(tool_call_id, "{}")
+                        current_item_id = event.item_id
+                        args_json = fn_args_buffer.get(current_item_id, "{}")
                         # Execute function
                         try:
                             args = json.loads(args_json or "{}")
@@ -208,19 +208,42 @@ async def stream_response(
                             ).render(reports=weather_output)
                             yield sse_format("toolOutput", weather_widget_html)
                             # Submit outputs and continue streaming
-                            next_stream = await post_tool_outputs(
-                                client,
-                                response_id=response_id,
-                                tool_call_id=tool_call_id,
-                                output=json.dumps(weather_output)
-                            )
-                            async for out in iterate_stream(next_stream, response_id):
-                                yield out
+                            try:
+                                items = await client.conversations.items.list(
+                                    conversation_id=conversation_id
+                                )
+                                function_call_item = next((item for item in items.data if item.id == current_item_id), None)
+                                if function_call_item:
+                                    call_id = function_call_item.call_id
+                                    await client.conversations.items.create(
+                                        conversation_id=conversation_id,
+                                        items=[{
+                                            "type": "function_call_output",
+                                            "call_id": call_id,
+                                            "output": json.dumps({
+                                                "weather": weather_output
+                                            })
+                                        }]
+                                    )
+                                    next_stream = await client.responses.create(
+                                        input="",
+                                        conversation=conversation_id,
+                                        model=model,
+                                        tools=tools or None,
+                                        instructions=instructions,
+                                        parallel_tool_calls=False,
+                                        stream=True
+                                    )
+                                    async for out in iterate_stream(next_stream, response_id):
+                                        yield out
+                            except Exception as e:
+                                logger.error(f"Error submitting tool outputs: {e}")
+                                raise HTTPException(status_code=500, detail=str(e))
                         except Exception as err:
                             yield sse_format("toolOutput", f"Function error: {err}")
 
                     elif isinstance(event, ResponseCompletedEvent):
-                        yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\" style=\"display: none;\"></span>")
+                        yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
                         yield sse_format("endStream", "DONE")
                     
                     else:

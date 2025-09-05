@@ -1,26 +1,10 @@
 import random
 import logging
 from datetime import datetime
-from typing import Sequence, Dict, Any, Callable
-from openai import AsyncOpenAI
-from fastapi import HTTPException
+from typing import Sequence, Dict, Any
 
 
 logger = logging.getLogger("uvicorn.error")
-
-
-# --- Utilities for submitting tool outputs to Responses ---
-
-async def post_tool_outputs(client: AsyncOpenAI, response_id: str, tool_call_id: str, output: str):
-    try:
-        submit_stream: Callable[..., Any] = getattr(client.responses, "submit_tool_outputs_stream")
-        return await submit_stream(
-            response_id=response_id,
-            tool_outputs=[{"tool_call_id": tool_call_id, "output": output}]
-        )
-    except Exception as e:
-        logger.error(f"Error submitting tool outputs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Custom tools ---
