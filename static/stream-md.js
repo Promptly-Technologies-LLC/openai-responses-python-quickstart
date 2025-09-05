@@ -20,6 +20,9 @@ function handleCustomSseEvents(evt) {
 		// This condition should only be met if an event *meant* for swapping (like textDelta) is missing data.
 		console.warn(`SSE event type '${originalSSEEvent.type}' (expected data for swap) without data or unexpected structure:`, originalSSEEvent);
 		return;
+	} else if (originalSSEEvent.type === 'textReplacement') {
+		evt.preventDefault();
+		processTextReplacement(originalSSEEvent);
 	}
 
 	// Prevent default HTMX swap for specific events we handle in JS
@@ -51,6 +54,43 @@ function processTextDelta(sseEvent) {
 
 	window._streamingMarkdown.set(targetElement, updatedMarkdown);
 	renderMarkdown(targetElement, updatedMarkdown, markdownChunk); // Pass original chunk for fallback
+}
+
+function processTextReplacement(sseEvent) {
+	const oobHTML = sseEvent.data;
+	const { targetElement, payload } = parseOobSwap(oobHTML, "textReplacement");
+
+	if (!targetElement || !payload) {
+		return;
+	}
+
+	const parts = payload.split('|');
+	if (parts.length !== 2) {
+		console.error("Invalid payload for textReplacement:", payload);
+		return;
+	}
+	const textToReplace = parts[0]; // This is "sandbox:/path/to/file"
+	const replacementText = parts[1]; // This is the actual download URL
+
+	if (!window._streamingMarkdown) {
+		// Should have been initialized by processTextDelta
+		window._streamingMarkdown = new WeakMap();
+	}
+
+	let currentMarkdown = window._streamingMarkdown.get(targetElement) || '';
+
+	// Build regex from pattern where '*' is a wildcard within the markdown link URL
+	const regex = new RegExp(`\\(\\s*${escapeRegExp(textToReplace)}\\s*\\)`, 'g');
+
+	if (regex.test(currentMarkdown)) {
+		currentMarkdown = currentMarkdown.replace(regex, `(${replacementText})`);
+		console.log(`Applied replacement: ${textToReplace} -> ${replacementText}`);
+		window._streamingMarkdown.set(targetElement, currentMarkdown);
+		renderMarkdown(targetElement, currentMarkdown, ''); // Re-render the whole thing
+	} else {
+		console.warn(`Text to replace '${textToReplace}' (in markdown link format) not found in current markdown. Markdown state:`, currentMarkdown.substring(0, 300));
+        // If synchronous handling is guaranteed, this path implies an issue or mismatch.
+	}
 }
 
 // Helper to parse OOB swap HTML and extract target and content

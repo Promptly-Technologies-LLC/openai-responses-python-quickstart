@@ -15,7 +15,9 @@ from openai.types.responses import (
     ResponseOutputTextAnnotationAddedEvent, ResponseContentPartAddedEvent,
     ResponseFileSearchCallInProgressEvent, ResponseFileSearchCallCompletedEvent,
     ResponseOutputItemDoneEvent, ResponseInProgressEvent, ResponseTextDoneEvent,
-    ResponseContentPartDoneEvent
+    ResponseContentPartDoneEvent, ResponseCodeInterpreterCallCodeDeltaEvent,
+    ResponseCodeInterpreterCallCodeDoneEvent, ResponseCodeInterpreterCallInterpretingEvent,
+    ResponseCodeInterpreterCallCompletedEvent
 )
 from openai import AsyncOpenAI
 from utils.custom_functions import get_weather, get_function_tool_def
@@ -127,8 +129,12 @@ async def stream_response(
                         isinstance(event, ResponseOutputItemDoneEvent) or \
                         isinstance(event, ResponseTextDoneEvent) or \
                         isinstance(event, ResponseContentPartDoneEvent) or \
-                        isinstance(event, ResponseOutputItemDoneEvent):
+                        isinstance(event, ResponseOutputItemDoneEvent) or \
+                        isinstance(event, ResponseCodeInterpreterCallCodeDoneEvent) or \
+                        isinstance(event, ResponseCodeInterpreterCallInterpretingEvent) or \
+                        isinstance(event, ResponseCodeInterpreterCallCompletedEvent):
                         # Don't need to handle "in progress" or intermediate "done" events
+                        # (though long-running code interpreter interpreting might warrant handling)
                         continue
                     
                     elif isinstance(event, ResponseFileSearchCallSearchingEvent) or isinstance(event, ResponseCodeInterpreterCallInProgressEvent):
@@ -138,7 +144,7 @@ async def stream_response(
                                 templates.get_template('components/assistant-step.html').render(
                                     step_type='toolCall',
                                     step_id=event.item_id,
-                                    content=f"Calling {tool} tool..."
+                                    content=f"Calling {tool} tool..." + ("\n" if isinstance(event, ResponseCodeInterpreterCallInProgressEvent) else "")
                                 )
                             )
 
@@ -160,6 +166,7 @@ async def stream_response(
 
                     elif isinstance(event, ResponseTextDeltaEvent) or isinstance(event, ResponseRefusalDeltaEvent):
                         if event.delta and current_item_id:
+                            logger.debug(f"Text delta event: {event.delta}")
                             yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                     elif isinstance(event, ResponseOutputTextAnnotationAddedEvent):
@@ -170,11 +177,23 @@ async def stream_response(
                                 encoded_filename = url_quote(filename, safe="")
                                 file_url_path = f"/files/{encoded_filename}"
                                 citation = f"(<a href=\"{file_url_path}\">†</a>)"
-                                logger.debug(f"Citation: {citation}")
                                 unique_annotations.add(citation)
                                 yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
+                            elif event.annotation["type"] == "container_file_citation":
+                                logger.debug(f"Container file citation event: {event}")
+                                container_id = event.annotation["container_id"]
+                                file_id = event.annotation["file_id"]
+                                file = await client.containers.files.retrieve(file_id, container_id=container_id)
+                                container_file_path = file.path
+                                file_url_path = f"/files/{container_id}/{file_id}/openai_content"
+                                replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
+                                yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
                             else:
                                 logger.error(f"Unhandled annotation type: {event.annotation['type']}")
+
+                    elif isinstance(event, ResponseCodeInterpreterCallCodeDeltaEvent):
+                        if event.delta and current_item_id:
+                            yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                     elif isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
                         current_item_id = event.item_id

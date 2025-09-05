@@ -2,7 +2,7 @@
 <div class="assistant-run" hx-target="find .dots" hx-swap="beforebegin" 
      hx-ext="sse"     
      sse-connect="/chat/{{ conversation_id }}/receive" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,runCompleted"
+     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted"
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
      hx-on::sse-close="reEnableSendButton()"

@@ -1,4 +1,9 @@
 import logging
+import os
+import mimetypes
+from urllib.parse import quote as url_quote
+import httpx
+from dotenv import load_dotenv
 from typing import Literal
 from fastapi import (
     APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form
@@ -7,7 +12,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from utils.files import get_or_create_vector_store, get_files_for_vector_store, store_file, retrieve_file, delete_local_file
-from utils.streaming import stream_file_content
+# from utils.streaming import stream_file_content
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -214,24 +219,94 @@ async def download_assistant_file(
     return retrieve_file(file_name)
 
 
-@router.get("/{file_id}/openai_content")
-async def download_openai_file(
+@router.get("/{container_id}/{file_id}/openai_content")
+async def download_container_file(
+    container_id: str = Path(..., description="The ID of the container the file is stored in"),
     file_id: str = Path(..., description="The ID of the file stored in OpenAI"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> StreamingResponse:
     """This endpoint retrieves files created by the code interpreter"""
     try:
-        file = await client.files.retrieve(file_id)
-        file_content = await client.files.content(file_id)
-        
-        if not hasattr(file_content, 'content'):
-            raise HTTPException(status_code=500, detail="File content not available")
-            
-        # Use stream_file_content helper
+        # Try to retrieve metadata to infer a filename from the sandbox path
+        filename: str | None = None
+        try:
+            file_meta = await client.containers.files.retrieve(file_id, container_id=container_id)
+            logger.debug(f"File metadata: {file_meta}")
+            sandbox_path = getattr(file_meta, "path", None)
+            if sandbox_path:
+                filename = os.path.basename(sandbox_path)
+        except Exception as meta_err:
+            logger.warning(f"Could not retrieve container file metadata for {file_id}: {meta_err}")
+
+        # Build request to the container file content endpoint
+        load_dotenv(override=True)
+        api_key = getattr(client, "api_key", None) or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="Missing OpenAI API key")
+
+        base_url_value = getattr(client, "base_url", None) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        # Coerce to string in case client.base_url is an httpx.URL
+        base_url = str(base_url_value).rstrip("/")
+        content_url = f"{base_url}/containers/{container_id}/files/{file_id}/content"
+
+        # Guess content type from filename if available; fall back to octet-stream
+        guessed_mime, _ = mimetypes.guess_type(filename or "")
+        media_type = guessed_mime or "application/octet-stream"
+
+        async def content_stream():
+            headers = {"Authorization": f"Bearer {api_key}"}
+            async with httpx.AsyncClient(timeout=None) as ac:
+                async with ac.stream("GET", content_url, headers=headers) as resp:
+                    try:
+                        resp.raise_for_status()
+                    except httpx.HTTPStatusError as http_err:
+                        # Read body safely for error reporting
+                        try:
+                            err_text = await resp.aread()
+                        except Exception:
+                            err_text = b""
+                        logger.error(f"HTTP error streaming container file {file_id}: {http_err} - {err_text!r}")
+                        raise HTTPException(status_code=resp.status_code, detail=f"Error downloading file from OpenAI: {err_text.decode('utf-8', 'ignore')}")
+
+                    # If server provides filename via Content-Disposition, prefer it
+                    nonlocal_filename = None
+                    cd_header = resp.headers.get("Content-Disposition")
+                    if cd_header and "filename=" in cd_header:
+                        try:
+                            # naive parse; handle filename* later if needed
+                            nonlocal_filename = cd_header.split("filename=")[-1].strip('"')
+                        except Exception:
+                            nonlocal_filename = None
+
+                    # Update outer-scope filename if available
+                    if nonlocal_filename:
+                        nonlocal filename
+                        filename = nonlocal_filename
+
+                    async for chunk in resp.aiter_bytes():
+                        if chunk:
+                            yield chunk
+
+        headers = {}
+        if filename:
+            # RFC 5987 filename* for UTF-8 support while keeping a simple filename fallback
+            safe_filename = filename
+            try:
+                safe_filename = filename.encode("latin-1", "ignore").decode("latin-1")
+            except Exception:
+                pass
+            headers["Content-Disposition"] = (
+                f"attachment; filename=\"{safe_filename}\"; filename*=UTF-8''{url_quote(filename)}"
+            )
+
         return StreamingResponse(
-            stream_file_content(file_content.content), # Assuming stream_file_content handles bytes
-            headers={"Content-Disposition": f'attachment; filename="{file.filename or file_id}"'}
+            content_stream(),
+            media_type=media_type,
+            headers=headers
         )
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error downloading file {file_id} from OpenAI: {e}")
         raise HTTPException(status_code=500, detail=f"Error downloading file from OpenAI: {str(e)}")
