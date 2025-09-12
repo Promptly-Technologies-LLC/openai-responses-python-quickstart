@@ -139,6 +139,7 @@ async def stream_response(
                     
                     elif isinstance(event, ResponseFileSearchCallSearchingEvent) or isinstance(event, ResponseCodeInterpreterCallInProgressEvent):
                         tool = "file search" if isinstance(event, ResponseFileSearchCallSearchingEvent) else "code interpreter"
+                        current_item_id = event.item_id
                         yield sse_format(
                                 "toolCallCreated",
                                 templates.get_template('components/assistant-step.html').render(
@@ -166,7 +167,6 @@ async def stream_response(
 
                     elif isinstance(event, ResponseTextDeltaEvent) or isinstance(event, ResponseRefusalDeltaEvent):
                         if event.delta and current_item_id:
-                            logger.debug(f"Text delta event: {event.delta}")
                             yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                     elif isinstance(event, ResponseOutputTextAnnotationAddedEvent):
@@ -180,7 +180,6 @@ async def stream_response(
                                 unique_annotations.add(citation)
                                 yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
                             elif event.annotation["type"] == "container_file_citation":
-                                logger.debug(f"Container file citation event: {event}")
                                 container_id = event.annotation["container_id"]
                                 file_id = event.annotation["file_id"]
                                 file = await client.containers.files.retrieve(file_id, container_id=container_id)
@@ -193,7 +192,7 @@ async def stream_response(
 
                     elif isinstance(event, ResponseCodeInterpreterCallCodeDeltaEvent):
                         if event.delta and current_item_id:
-                            yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
+                            yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                     elif isinstance(event, ResponseFunctionCallArgumentsDeltaEvent):
                         current_item_id = event.item_id
