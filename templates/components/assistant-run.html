@@ -1,7 +1,7 @@
 <!-- assistant-run.html -->
 <div class="assistant-run" hx-target="find .dots" hx-swap="beforebegin" 
      hx-ext="sse"     
-     sse-connect="/chat/{{ conversation_id }}/receive" 
+     sse-connect="{{ url_for('stream_response', conversation_id=conversation_id) }}" 
      sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted"
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"

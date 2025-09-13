@@ -13,5 +13,3 @@ async def create_conversation() -> str:
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         return ""
-
-

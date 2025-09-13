@@ -21,6 +21,7 @@ from openai import AsyncOpenAI
 from utils.custom_functions import get_weather, get_function_tool_def
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
+from routers.files import router as files_router
 
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
@@ -59,9 +60,11 @@ async def send_message(
         }]
     )
 
-    user_message_html = templates.get_template("components/user-message.html").render(user_input=userInput)
+    user_message_html = templates.get_template("components/user-message.html").render(
+        request=request, user_input=userInput
+    )
     assistant_run_html = templates.get_template("components/assistant-run.html").render(
-        conversation_id=conversation_id
+        request=request, conversation_id=conversation_id
     )
 
     return HTMLResponse(content=(user_message_html + assistant_run_html))
@@ -168,12 +171,13 @@ async def stream_response(
                                 yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                         case ResponseOutputTextAnnotationAddedEvent():
+                            logger.info(f"ResponseOutputTextAnnotationAddedEvent: {event}")
                             if event.annotation and current_item_id:
                                 if event.annotation["type"] == "file_citation":
                                     filename = event.annotation["filename"]
                                     # Emit a literal HTML anchor to avoid markdown parsing edge cases
                                     encoded_filename = url_quote(filename, safe="")
-                                    file_url_path = f"/files/{encoded_filename}"
+                                    file_url_path = files_router.url_path_for("download_stored_file", file_name=encoded_filename)
                                     citation = f"(<a href=\"{file_url_path}\">†</a>)"
                                     unique_annotations.add(citation)
                                     yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
@@ -182,7 +186,7 @@ async def stream_response(
                                     file_id = event.annotation["file_id"]
                                     file = await client.containers.files.retrieve(file_id, container_id=container_id)
                                     container_file_path = file.path
-                                    file_url_path = f"/files/{container_id}/{file_id}/openai_content"
+                                    file_url_path = files_router.url_path_for("download_container_file", container_id=container_id, file_id=file_id)
                                     replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
                                     yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
                                 else:

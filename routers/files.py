@@ -205,7 +205,7 @@ async def delete_file(
 
 
 @router.get("/{file_name}")
-async def download_assistant_file(
+async def download_stored_file(
     file_name: str = Path(..., description="The name of the file to retrieve")
 ) -> FileResponse:
     """This endpoint retrieves files uploaded TO openai as file search inputs
@@ -215,7 +215,7 @@ async def download_assistant_file(
 
 
 @router.get("/{container_id}/{file_id}/openai_content")
-async def download_openai_file(
+async def download_container_file(
     container_id: str = Path(..., description="The ID of the container the file is stored in"),
     file_id: str = Path(..., description="The ID of the file stored in OpenAI"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
