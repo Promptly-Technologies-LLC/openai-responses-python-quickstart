@@ -2,11 +2,12 @@
 <div class="assistant-run" hx-target="find .dots" hx-swap="beforebegin" 
      hx-ext="sse"     
      sse-connect="{{ url_for('stream_response', conversation_id=conversation_id) }}" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted"
+     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted,networkError"
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
      hx-on::sse-close="reEnableSendButton()"
      hx-on::sse-error="reEnableSendButton()"
      data-conversation-id="{{ conversation_id }}">
      {% include "components/loading_dots.html" %}
+     {% include "components/network_error.html" %}
 </div>

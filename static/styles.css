@@ -560,6 +560,18 @@ pre {
   font-size: 0.875rem;
 }
 
+/* Network Error Banner */
+.networkError {
+  display: none;
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+  padding: 8px 16px;
+  border-radius: 8px;
+  margin: 8px 0;
+  width: fit-content;
+}
+
 /* --- Nav --- */
 .nav {
   position: relative; /* Context for absolute logo if needed later */

@@ -25,7 +25,7 @@
           </div>
           <form id="chatForm" class="inputForm clearfix"
                 hx-on::after-request="this.reset()"
-                hx-on::before-request="disableSendButton()">
+                hx-on::before-request="removeNetworkError(); disableSendButton()">
             <textarea
               class="input"
               name="userInput"

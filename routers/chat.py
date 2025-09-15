@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from datetime import datetime
 from typing import AsyncGenerator, Dict, Any
 from fastapi.templating import Jinja2Templates
@@ -116,155 +117,168 @@ async def stream_response(
             # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
 
-            async with s as events:
-                async for event in events:
-                    match event:
-                        case ResponseCreatedEvent():
-                            response_id = event.response.id
+            try:
+                async with s as events:
+                    async for event in events:
+                        match event:
+                            case ResponseCreatedEvent():
+                                response_id = event.response.id
 
-                        case ResponseInProgressEvent() | \
-                            ResponseFileSearchCallInProgressEvent() | \
-                            ResponseFileSearchCallCompletedEvent() | \
-                            ResponseOutputItemDoneEvent() | \
-                            ResponseTextDoneEvent() | \
-                            ResponseContentPartDoneEvent() | \
-                            ResponseOutputItemDoneEvent() | \
-                            ResponseCodeInterpreterCallCodeDoneEvent() | \
-                            ResponseCodeInterpreterCallInterpretingEvent() | \
-                            ResponseCodeInterpreterCallCompletedEvent():
-                            # Don't need to handle "in progress" or intermediate "done" events
-                            # (though long-running code interpreter interpreting might warrant handling)
-                            continue
-                    
-                        case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
-                            tool = event.type.split(".")[1].split("_call")[0]
-                            current_item_id = event.item_id
-                            yield sse_format(
-                                    "toolCallCreated",
-                                    templates.get_template('components/assistant-step.html').render(
-                                        step_type='toolCall',
-                                        step_id=event.item_id,
-                                        content=f"Calling {tool} tool..." + ("\n" if isinstance(event, ResponseCodeInterpreterCallInProgressEvent) else "")
-                                    )
-                                )
-
-                        case ResponseOutputItemAddedEvent():
-                            # Skip reasoning steps by default (later make this configurable and/or mount a thinking indicator)
-                            if event.item.id and event.item.type in ["message", "output_text"]:
-                                current_item_id = event.item.id
+                            case ResponseInProgressEvent() | \
+                                ResponseFileSearchCallInProgressEvent() | \
+                                ResponseFileSearchCallCompletedEvent() | \
+                                ResponseOutputItemDoneEvent() | \
+                                ResponseTextDoneEvent() | \
+                                ResponseContentPartDoneEvent() | \
+                                ResponseOutputItemDoneEvent() | \
+                                ResponseCodeInterpreterCallCodeDoneEvent() | \
+                                ResponseCodeInterpreterCallInterpretingEvent() | \
+                                ResponseCodeInterpreterCallCompletedEvent():
+                                # Don't need to handle "in progress" or intermediate "done" events
+                                # (though long-running code interpreter interpreting might warrant handling)
+                                continue
+                        
+                            case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
+                                tool = event.type.split(".")[1].split("_call")[0]
+                                current_item_id = event.item_id
                                 yield sse_format(
-                                    "messageCreated",
-                                    templates.get_template("components/assistant-step.html").render(
-                                        step_type="assistantMessage",
-                                        step_id=event.item.id
-                                    )
-                                )
-
-                        case ResponseContentPartAddedEvent():
-                            # This event indicates the start of annotations; skip creating a new assistantMessage
-                            continue
-
-                        case ResponseTextDeltaEvent() | ResponseRefusalDeltaEvent():
-                            if event.delta and current_item_id:
-                                yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
-
-                        case ResponseOutputTextAnnotationAddedEvent():
-                            logger.info(f"ResponseOutputTextAnnotationAddedEvent: {event}")
-                            if event.annotation and current_item_id:
-                                if event.annotation["type"] == "file_citation":
-                                    filename = event.annotation["filename"]
-                                    # Emit a literal HTML anchor to avoid markdown parsing edge cases
-                                    encoded_filename = url_quote(filename, safe="")
-                                    file_url_path = files_router.url_path_for("download_stored_file", file_name=encoded_filename)
-                                    citation = f"(<a href=\"{file_url_path}\">†</a>)"
-                                    yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
-                                elif event.annotation["type"] == "container_file_citation":
-                                    container_id = event.annotation["container_id"]
-                                    file_id = event.annotation["file_id"]
-                                    file = await client.containers.files.retrieve(file_id, container_id=container_id)
-                                    container_file_path = file.path
-                                    file_url_path = files_router.url_path_for("download_container_file", container_id=container_id, file_id=file_id)
-                                    replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
-                                    yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
-                                else:
-                                    logger.error(f"Unhandled annotation type: {event.annotation['type']}")
-
-                        case ResponseCodeInterpreterCallCodeDeltaEvent():
-                            if event.delta and current_item_id:
-                                yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, event.delta))
-
-                        case ResponseFunctionCallArgumentsDeltaEvent():
-                            current_item_id = event.item_id
-                            delta = event.delta
-                            if current_item_id:
-                                # Emit a toolCallCreated once per current_item_id
-                                if current_item_id not in fn_args_buffer:
-                                    yield sse_format(
                                         "toolCallCreated",
                                         templates.get_template('components/assistant-step.html').render(
                                             step_type='toolCall',
-                                            step_id=current_item_id
+                                            step_id=event.item_id,
+                                            content=f"Calling {tool} tool..." + ("\n" if isinstance(event, ResponseCodeInterpreterCallInProgressEvent) else "")
                                         )
                                     )
-                                    fn_args_buffer[current_item_id] = ""
-                                fn_args_buffer[current_item_id] += str(delta)
-                                yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
-                        case ResponseFunctionCallArgumentsDoneEvent():
-                            current_item_id = event.item_id
-                            args_json = fn_args_buffer.get(current_item_id, "{}")
-                            # Execute function
-                            try:
-                                args = json.loads(args_json or "{}")
-                                location = args.get("location", "Unknown")
-                                dates_raw = args.get("dates", [datetime.today().strftime("%Y-%m-%d")])
-                                weather_output = get_weather(location, dates_raw)
-                                # Render widget
-                                weather_widget_html = templates.get_template(
-                                    "components/weather-widget.html"
-                                ).render(reports=weather_output)
-                                yield sse_format("toolOutput", weather_widget_html)
-                                # Submit outputs and continue streaming
+                            case ResponseOutputItemAddedEvent():
+                                # Skip reasoning steps by default (later make this configurable and/or mount a thinking indicator)
+                                if event.item.id and event.item.type in ["message", "output_text"]:
+                                    current_item_id = event.item.id
+                                    yield sse_format(
+                                        "messageCreated",
+                                        templates.get_template("components/assistant-step.html").render(
+                                            step_type="assistantMessage",
+                                            step_id=event.item.id
+                                        )
+                                    )
+
+                            case ResponseContentPartAddedEvent():
+                                # This event indicates the start of annotations; skip creating a new assistantMessage
+                                continue
+
+                            case ResponseTextDeltaEvent() | ResponseRefusalDeltaEvent():
+                                if event.delta and current_item_id:
+                                    yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
+
+                            case ResponseOutputTextAnnotationAddedEvent():
+                                logger.info(f"ResponseOutputTextAnnotationAddedEvent: {event}")
+                                if event.annotation and current_item_id:
+                                    if event.annotation["type"] == "file_citation":
+                                        filename = event.annotation["filename"]
+                                        # Emit a literal HTML anchor to avoid markdown parsing edge cases
+                                        encoded_filename = url_quote(filename, safe="")
+                                        file_url_path = files_router.url_path_for("download_stored_file", file_name=encoded_filename)
+                                        citation = f"(<a href=\"{file_url_path}\">†</a>)"
+                                        yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
+                                    elif event.annotation["type"] == "container_file_citation":
+                                        container_id = event.annotation["container_id"]
+                                        file_id = event.annotation["file_id"]
+                                        file = await client.containers.files.retrieve(file_id, container_id=container_id)
+                                        container_file_path = file.path
+                                        file_url_path = files_router.url_path_for("download_container_file", container_id=container_id, file_id=file_id)
+                                        replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
+                                        yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
+                                    else:
+                                        logger.error(f"Unhandled annotation type: {event.annotation['type']}")
+
+                            case ResponseCodeInterpreterCallCodeDeltaEvent():
+                                if event.delta and current_item_id:
+                                    yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, event.delta))
+
+                            case ResponseFunctionCallArgumentsDeltaEvent():
+                                current_item_id = event.item_id
+                                delta = event.delta
+                                if current_item_id:
+                                    # Emit a toolCallCreated once per current_item_id
+                                    if current_item_id not in fn_args_buffer:
+                                        yield sse_format(
+                                            "toolCallCreated",
+                                            templates.get_template('components/assistant-step.html').render(
+                                                step_type='toolCall',
+                                                step_id=current_item_id
+                                            )
+                                        )
+                                        fn_args_buffer[current_item_id] = ""
+                                    fn_args_buffer[current_item_id] += str(delta)
+                                    yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
+
+                            case ResponseFunctionCallArgumentsDoneEvent():
+                                current_item_id = event.item_id
+                                args_json = fn_args_buffer.get(current_item_id, "{}")
+                                # Execute function
                                 try:
-                                    items = await client.conversations.items.list(
-                                        conversation_id=conversation_id
-                                    )
-                                    function_call_item = next((item for item in items.data if item.id == current_item_id), None)
-                                    if function_call_item:
-                                        call_id = function_call_item.call_id
-                                        await client.conversations.items.create(
-                                            conversation_id=conversation_id,
-                                            items=[{
-                                                "type": "function_call_output",
-                                                "call_id": call_id,
-                                                "output": json.dumps({
-                                                    "weather": weather_output
-                                                })
-                                            }]
+                                    args = json.loads(args_json or "{}")
+                                    location = args.get("location", "Unknown")
+                                    dates_raw = args.get("dates", [datetime.today().strftime("%Y-%m-%d")])
+                                    weather_output = get_weather(location, dates_raw)
+                                    # Render widget
+                                    weather_widget_html = templates.get_template(
+                                        "components/weather-widget.html"
+                                    ).render(reports=weather_output)
+                                    yield sse_format("toolOutput", weather_widget_html)
+                                    # Submit outputs and continue streaming
+                                    try:
+                                        items = await client.conversations.items.list(
+                                            conversation_id=conversation_id
                                         )
-                                        next_stream = await client.responses.create(
-                                            input="",
-                                            conversation=conversation_id,
-                                            model=model,
-                                            tools=tools or None,
-                                            instructions=instructions,
-                                            parallel_tool_calls=False,
-                                            stream=True
-                                        )
-                                        async for out in iterate_stream(next_stream, response_id):
-                                            yield out
-                                except Exception as e:
-                                    logger.error(f"Error submitting tool outputs: {e}")
-                                    raise HTTPException(status_code=500, detail=str(e))
-                            except Exception as err:
-                                yield sse_format("toolOutput", f"Function error: {err}")
+                                        function_call_item = next((item for item in items.data if item.id == current_item_id), None)
+                                        if function_call_item:
+                                            call_id = function_call_item.call_id
+                                            await client.conversations.items.create(
+                                                conversation_id=conversation_id,
+                                                items=[{
+                                                    "type": "function_call_output",
+                                                    "call_id": call_id,
+                                                    "output": json.dumps({
+                                                        "weather": weather_output
+                                                    })
+                                                }]
+                                            )
+                                            next_stream = await client.responses.create(
+                                                input="",
+                                                conversation=conversation_id,
+                                                model=model,
+                                                tools=tools or None,
+                                                instructions=instructions,
+                                                parallel_tool_calls=False,
+                                                stream=True
+                                            )
+                                            async for out in iterate_stream(next_stream, response_id):
+                                                yield out
+                                    except Exception as e:
+                                        logger.error(f"Error submitting tool outputs: {e}")
+                                        raise HTTPException(status_code=500, detail=str(e))
+                                except Exception as err:
+                                    yield sse_format("toolOutput", f"Function error: {err}")
 
-                        case ResponseCompletedEvent():
-                            yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
-                            yield sse_format("endStream", "DONE")
+                            case ResponseCompletedEvent():
+                                yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
+                                yield sse_format("endStream", "DONE")
 
-                        case _:
-                            logger.error(f"Unhandled event: {event}")
+                            case _:
+                                logger.error(f"Unhandled event: {event}")
+            except asyncio.CancelledError:
+                # Important: let cancellation/cleanup signals propagate
+                raise
+            except Exception as e:
+                logger.error(f"Network/stream error: {e}")
+                # Ensure loader clears
+                yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
+                # Send a minimal payload so the client handler (which expects data) doesn't warn
+                yield sse_format("networkError", "<span></span>")
+                # Close the SSE source on the client
+                yield sse_format("endStream", "ERROR")
+                return
 
         async for sse in iterate_stream(stream):
             yield sse
