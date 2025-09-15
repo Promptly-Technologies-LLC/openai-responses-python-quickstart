@@ -115,8 +115,6 @@ async def stream_response(
             current_item_id: str = ""
             # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
-            # Accumulate unique annotations (for deduplication)
-            unique_annotations: set[str] = set()
 
             async with s as events:
                 async for event in events:
@@ -179,7 +177,6 @@ async def stream_response(
                                     encoded_filename = url_quote(filename, safe="")
                                     file_url_path = files_router.url_path_for("download_stored_file", file_name=encoded_filename)
                                     citation = f"(<a href=\"{file_url_path}\">†</a>)"
-                                    unique_annotations.add(citation)
                                     yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
                                 elif event.annotation["type"] == "container_file_citation":
                                     container_id = event.annotation["container_id"]
