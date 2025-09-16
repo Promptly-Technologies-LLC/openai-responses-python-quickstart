@@ -16,7 +16,10 @@ from openai.types.responses import (
     ResponseOutputItemDoneEvent, ResponseInProgressEvent, ResponseTextDoneEvent,
     ResponseContentPartDoneEvent, ResponseCodeInterpreterCallCodeDeltaEvent,
     ResponseCodeInterpreterCallCodeDoneEvent, ResponseCodeInterpreterCallInterpretingEvent,
-    ResponseCodeInterpreterCallCompletedEvent
+    ResponseCodeInterpreterCallCompletedEvent, ResponseMcpListToolsInProgressEvent,
+    ResponseMcpListToolsFailedEvent, ResponseMcpListToolsCompletedEvent,
+    ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
+    ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
 from openai import AsyncOpenAI
 from utils.custom_functions import get_weather, get_function_tool_def
@@ -100,6 +103,17 @@ async def stream_response(
             })
         if "function" in enabled_tools:
             tools.append(get_function_tool_def())
+        if "mcp" in enabled_tools:
+            # TODO: make configurable and implement tool appending logic
+            # tools.append({
+            #     "type": "mcp",
+            #     "server_label": "",
+            #     "server_description": "",
+            #     "server_url": "",
+            #     "require_approval": "never",
+            #     "authorization": ""
+            # })
+            pass
 
         stream = await client.responses.create(
             input="",
@@ -133,11 +147,28 @@ async def stream_response(
                                 ResponseOutputItemDoneEvent() | \
                                 ResponseCodeInterpreterCallCodeDoneEvent() | \
                                 ResponseCodeInterpreterCallInterpretingEvent() | \
-                                ResponseCodeInterpreterCallCompletedEvent():
+                                ResponseCodeInterpreterCallCompletedEvent() | \
+                                ResponseMcpListToolsInProgressEvent() | \
+                                ResponseMcpListToolsCompletedEvent() | \
+                                ResponseMcpCallArgumentsDoneEvent() | \
+                                ResponseMcpCallCompletedEvent() | \
+                                ResponseMcpCallInProgressEvent():
                                 # Don't need to handle "in progress" or intermediate "done" events
                                 # (though long-running code interpreter interpreting might warrant handling)
                                 continue
-                        
+
+                            case ResponseMcpListToolsFailedEvent():
+                                # TODO: handle this (currently triggers Network/stream error exception handler)
+                                continue
+
+                            case ResponseMcpCallInProgressEvent():
+                                # TODO: handle this
+                                continue
+
+                            case ResponseMcpCallArgumentsDeltaEvent():
+                                # TODO: handle this
+                                continue
+
                             case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
                                 tool = event.type.split(".")[1].split("_call")[0]
                                 current_item_id = event.item_id
