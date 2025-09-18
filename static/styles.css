@@ -514,7 +514,28 @@ pre {
 
 /* Weather widget layout refinements */
 .weatherContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px;
+  border-radius: var(--border-radius);
+  background: linear-gradient(135deg, #a8e6cf 0%, #dcedc1 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
   gap: 12px;
+  width: fit-content;
+  height: fit-content;
+  color: #333;
+}
+
+.weatherContainer h2,
+.weatherContainer p {
+  margin: 0;
+  padding: 0 10px;
+  flex: 1;
+  text-align: center;
+  color: #333;
 }
 
 .location h2 {
@@ -536,6 +557,9 @@ pre {
 /* Small screens */
 @media (max-width: 600px) {
   .toolOutput pre { max-width: 100%; }
+  .weatherContainer { flex-direction: column; align-items: flex-start; }
+  .weatherContainer h2,
+  .weatherContainer p { text-align: left; padding: 5px 0; }
 }
 
 /* Code Interpreter Image Styles */

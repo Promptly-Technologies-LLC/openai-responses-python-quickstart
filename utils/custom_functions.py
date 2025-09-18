@@ -12,7 +12,7 @@ logger = logging.getLogger("uvicorn.error")
 
 def get_weather(location: str, dates: Sequence[str | datetime] = [datetime.today()]) -> list[dict[str, Any]]:
     """
-    Example function that generates random weather reports for a given location over a date range.
+    Retrieves weather reports for a given location over a date range.
     """
     weather_reports = []
 
