@@ -8,5 +8,5 @@ TOOL_REGISTRY = ToolRegistry()
 
 TOOL_REGISTRY.add_function(get_weather)
 TEMPLATE_REGISTRY.update({
-    "get_weather": "components/weather_widget.html",
+    "get_weather": "components/weather-widget.html",
 })
