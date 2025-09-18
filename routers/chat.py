@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from typing import AsyncGenerator, Dict, Any
 from fastapi.templating import Jinja2Templates
-from fastapi import APIRouter, Form, Depends, Request, HTTPException
+from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai.types.responses import (
     ResponseCreatedEvent, ResponseOutputItemAddedEvent,
@@ -22,7 +22,9 @@ from openai.types.responses import (
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
 from openai import AsyncOpenAI
-from utils.custom_functions import get_weather, get_function_tool_def
+from utils.custom_functions import get_weather
+from utils.function_definitions import get_function_tool_def
+from utils.function_calling import ToolRegistry, Context, ToolResult
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
 from routers.files import router as files_router
@@ -85,9 +87,17 @@ async def stream_response(
         import os
         from dotenv import load_dotenv
         load_dotenv(override=True)
-        model = os.getenv("RESPONSES_MODEL", "gpt-4o")
+        model = os.getenv("RESPONSES_MODEL", "gpt-5-mini")
         instructions = os.getenv("RESPONSES_INSTRUCTIONS")
         enabled_tools = [t.strip() for t in os.getenv("ENABLED_TOOLS", "").split(",") if t.strip()]
+
+        # Initialize dynamic function-calling registry and register tools
+        # TODO: Allow the user to configure tool/template registry from the setup page
+        registry = ToolRegistry()
+        registry.add_function(get_weather)
+        TEMPLATE_REGISTRY: dict[str, str | tuple[str, callable]] = {
+            "get_weather": "components/weather-widget.html",
+        }
 
         # Build tools
         tools: list[Dict[str, Any]] = []
@@ -102,7 +112,12 @@ async def stream_response(
                 "container": {"type": "auto"}
             })
         if "function" in enabled_tools:
-            tools.append(get_function_tool_def())
+            for reg in registry.list():
+                tool_def = get_function_tool_def(reg.fn)
+                # Ensure the published tool name matches the registry name
+                if tool_def.get("name") != reg.name:
+                    tool_def["name"] = reg.name
+                tools.append(tool_def)
         if "mcp" in enabled_tools:
             # TODO: make configurable and implement tool appending logic
             # tools.append({
@@ -126,7 +141,7 @@ async def stream_response(
         )
 
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
-            nonlocal model, conversation_id, tools, instructions
+            nonlocal model, conversation_id, tools, instructions, registry
             current_item_id: str = ""
             # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
@@ -141,10 +156,8 @@ async def stream_response(
                             case ResponseInProgressEvent() | \
                                 ResponseFileSearchCallInProgressEvent() | \
                                 ResponseFileSearchCallCompletedEvent() | \
-                                ResponseOutputItemDoneEvent() | \
                                 ResponseTextDoneEvent() | \
                                 ResponseContentPartDoneEvent() | \
-                                ResponseOutputItemDoneEvent() | \
                                 ResponseCodeInterpreterCallCodeDoneEvent() | \
                                 ResponseCodeInterpreterCallInterpretingEvent() | \
                                 ResponseCodeInterpreterCallCompletedEvent() | \
@@ -152,17 +165,14 @@ async def stream_response(
                                 ResponseMcpListToolsCompletedEvent() | \
                                 ResponseMcpCallArgumentsDoneEvent() | \
                                 ResponseMcpCallCompletedEvent() | \
-                                ResponseMcpCallInProgressEvent():
+                                ResponseMcpCallInProgressEvent() | \
+                                ResponseFunctionCallArgumentsDoneEvent():
                                 # Don't need to handle "in progress" or intermediate "done" events
                                 # (though long-running code interpreter interpreting might warrant handling)
                                 continue
 
                             case ResponseMcpListToolsFailedEvent():
                                 # TODO: handle this (currently triggers Network/stream error exception handler)
-                                continue
-
-                            case ResponseMcpCallInProgressEvent():
-                                # TODO: handle this
                                 continue
 
                             case ResponseMcpCallArgumentsDeltaEvent():
@@ -243,54 +253,60 @@ async def stream_response(
                                     fn_args_buffer[current_item_id] += str(delta)
                                     yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
-                            case ResponseFunctionCallArgumentsDoneEvent():
-                                current_item_id = event.item_id
-                                args_json = fn_args_buffer.get(current_item_id, "{}")
-                                # Execute function
-                                try:
-                                    args = json.loads(args_json or "{}")
-                                    location = args.get("location", "Unknown")
-                                    dates_raw = args.get("dates", [datetime.today().strftime("%Y-%m-%d")])
-                                    weather_output = get_weather(location, dates_raw)
-                                    # Render widget
-                                    weather_widget_html = templates.get_template(
-                                        "components/weather-widget.html"
-                                    ).render(reports=weather_output)
-                                    yield sse_format("toolOutput", weather_widget_html)
-                                    # Submit outputs and continue streaming
+                            case ResponseOutputItemDoneEvent():
+                                if event.item.type == "function_call":
+                                    logger.info(f"ResponseOutputItemDoneEvent: {event}")
+                                    current_item_id = event.item.id
+                                    function_name = event.item.name
+                                    arguments_json = json.loads(event.item.arguments)
+
+                                    # Dispatch via registry
+                                    result: ToolResult[Any] = await registry.call(function_name, arguments_json, context=Context())
+
+                                    # Render output (custom widget for weather, generic otherwise)
                                     try:
-                                        items = await client.conversations.items.list(
-                                            conversation_id=conversation_id
-                                        )
-                                        function_call_item = next((item for item in items.data if item.id == current_item_id), None)
-                                        if function_call_item:
-                                            call_id = function_call_item.call_id
-                                            await client.conversations.items.create(
-                                                conversation_id=conversation_id,
-                                                items=[{
-                                                    "type": "function_call_output",
-                                                    "call_id": call_id,
-                                                    "output": json.dumps({
-                                                        "weather": weather_output
-                                                    })
-                                                }]
-                                            )
-                                            next_stream = await client.responses.create(
-                                                input="",
-                                                conversation=conversation_id,
-                                                model=model,
-                                                tools=tools or None,
-                                                instructions=instructions,
-                                                parallel_tool_calls=False,
-                                                stream=True
-                                            )
-                                            async for out in iterate_stream(next_stream, response_id):
-                                                yield out
+                                        if function_name in TEMPLATE_REGISTRY:
+                                            tpl = TEMPLATE_REGISTRY[function_name]
+                                            if isinstance(tpl, tuple):
+                                                tpl_name, context_builder = tpl
+                                                html = templates.get_template(tpl_name).render(**context_builder(result))
+                                            else:
+                                                html = templates.get_template(tpl).render(tool=result)
+                                            yield sse_format("toolOutput", html)
+                                        else:
+                                            payload = result.model_dump(exclude_none=True)
+                                            yield sse_format("toolOutput", f"<pre>{json.dumps(payload, indent=2)}</pre>")
                                     except Exception as e:
-                                        logger.error(f"Error submitting tool outputs: {e}")
-                                        raise HTTPException(status_code=500, detail=str(e))
-                                except Exception as err:
-                                    yield sse_format("toolOutput", f"Function error: {err}")
+                                        logger.error(f"Error rendering tool output for '{function_name}': {e}")
+                                        # Fallback to raw JSON
+                                        yield sse_format("toolOutput", f"<pre>{json.dumps(result.model_dump(exclude_none=True))}</pre>")
+
+                                    # Submit outputs and continue streaming
+                                    items = await client.conversations.items.list(
+                                        conversation_id=conversation_id
+                                    )
+                                    function_call_item = next((item for item in items.data if item.id == current_item_id), None)
+                                    if function_call_item:
+                                        call_id = function_call_item.call_id
+                                        await client.conversations.items.create(
+                                            conversation_id=conversation_id,
+                                            items=[{
+                                                "type": "function_call_output",
+                                                "call_id": call_id,
+                                                "output": json.dumps(result.model_dump(exclude_none=True))
+                                            }]
+                                        )
+                                        next_stream = await client.responses.create(
+                                            input="",
+                                            conversation=conversation_id,
+                                            model=model,
+                                            tools=tools or None,
+                                            instructions=instructions,
+                                            parallel_tool_calls=False,
+                                            stream=True
+                                        )
+                                        async for out in iterate_stream(next_stream, response_id):
+                                            yield out
 
                             case ResponseCompletedEvent():
                                 yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")

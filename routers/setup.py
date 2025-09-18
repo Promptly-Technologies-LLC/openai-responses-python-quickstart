@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from urllib.parse import quote
 
-from utils.create_assistant import update_env_file
+from utils.env_file import update_env_file
 
 # Configure logger
 logger = logging.getLogger("uvicorn.error")
