@@ -11,7 +11,7 @@ logger = logging.getLogger("uvicorn.error")
 
 # Helper function to get or create a vector store (env-based, not assistant-bound)
 async def get_or_create_vector_store(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> str:
-    from utils.env_file import update_env_file
+    from utils.config import update_env_file
     vs_id = os.getenv("VECTOR_STORE_ID")
     if vs_id:
         return vs_id

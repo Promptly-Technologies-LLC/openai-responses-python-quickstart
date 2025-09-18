@@ -81,7 +81,7 @@
                     </label>
                     <label>
                       <input type="checkbox" name="tool_types" value="function" {% if "function" in current_tools %}checked{% endif %}>
-                      Get Weather (Custom Function)
+                      Custom Functions
                     </label>
                   </div>
                   <div class="centered-button-container">
@@ -98,6 +98,94 @@
                 <div class="setupSection" style="margin-top: 20px;">
                     {% include 'components/file-viewer.html' %}
                 </div>
+              {% endif %}
+              {% if "function" in current_tools %}
+                <div class="setupSection" style="margin-top: 20px;">
+                  <h3>Register Custom Functions</h3>
+                  <p class="setupMessage">Provide function entries to include in <code>utils/registry.py</code>. Use module import path for functions and a template path relative to the <code>templates/</code> directory (e.g., <code>components/weather-widget.html</code>). If you paste a path beginning with <code>templates/</code>, it will be normalized automatically.</p>
+
+                  <form action="{{ url_for('save_app_config') }}" method="POST" id="registry-form">
+                    <input type="hidden" name="action" value="regenerate_registry">
+
+                    <div id="registry-rows">
+                      {% if existing_registry_entries %}
+                        {% for entry in existing_registry_entries %}
+                          <div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
+                            <div>
+                              <label for="fn-{{ loop.index0 }}">Function Name</label>
+                              <input type="text" id="fn-{{ loop.index0 }}" name="reg_function_names" class="input" value="{{ entry.function_name }}" autocomplete="off">
+                            </div>
+                            <div>
+                              <label for="imp-{{ loop.index0 }}">Import Path</label>
+                              <input type="text" id="imp-{{ loop.index0 }}" name="reg_import_paths" class="input" value="{{ entry.import_path }}" autocomplete="off">
+                            </div>
+                            <div>
+                              <label for="tpl-{{ loop.index0 }}">Template Path <span style="opacity:0.7;">(optional)</span></label>
+                              <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="tpl-{{ loop.index0 }}" name="reg_template_paths" class="input" value="{{ entry.template_path }}" placeholder="components/widget.html (optional)" autocomplete="off">
+                                <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
+                              </div>
+                            </div>
+                          </div>
+                        {% endfor %}
+                      {% else %}
+                      <div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
+                        <div>
+                          <label for="fn-0">Function Name</label>
+                          <input type="text" id="fn-0" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off">
+                        </div>
+                        <div>
+                          <label for="imp-0">Import Path</label>
+                          <input type="text" id="imp-0" name="reg_import_paths" class="input" placeholder="utils.custom_functions" autocomplete="off">
+                        </div>
+                        <div>
+                          <label for="tpl-0">Template Path <span style="opacity:0.7;">(optional)</span></label>
+                          <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="tpl-0" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
+                            <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
+                          </div>
+                        </div>
+                      </div>
+                      {% endif %}
+                    </div>
+
+                    <div style="display:flex; gap: 10px;">
+                      <button type="button" class="button" onclick="addRegistryItem()">Add Function</button>
+                      <button type="submit" class="button">Regenerate registry.py</button>
+                    </div>
+                  </form>
+                </div>
+                <script>
+                function addRegistryItem() {
+                  const container = document.getElementById('registry-rows');
+                  const index = container.querySelectorAll('.registry-row').length;
+                  const row = document.createElement('div');
+                  row.className = 'registry-row';
+                  row.style.cssText = 'display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;';
+                  row.innerHTML = `
+                    <div>
+                      <label for="fn-${index}">Function Name</label>
+                      <input type="text" id="fn-${index}" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off">
+                    </div>
+                    <div>
+                      <label for="imp-${index}">Import Path</label>
+                      <input type="text" id="imp-${index}" name="reg_import_paths" class="input" placeholder="utils.custom_functions" autocomplete="off">
+                    </div>
+                    <div>
+                      <label for="tpl-${index}">Template Path <span style="opacity:0.7;">(optional)</span></label>
+                      <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="tpl-${index}" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
+                        <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
+                      </div>
+                    </div>
+                  `;
+                  container.appendChild(row);
+                }
+                function removeRegistryItem(btn) {
+                  const row = btn.closest('.registry-row');
+                  if (row) row.remove();
+                }
+                </script>
               {% endif %}
           {% endif %}
         </div>

@@ -22,9 +22,8 @@ from openai.types.responses import (
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
 from openai import AsyncOpenAI
-from utils.custom_functions import get_weather
 from utils.function_definitions import get_function_tool_def
-from utils.function_calling import ToolRegistry, Context, ToolResult
+from utils.function_calling import Context, ToolResult
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
 from routers.files import router as files_router
@@ -86,18 +85,11 @@ async def stream_response(
         # Load config from env
         import os
         from dotenv import load_dotenv
+        from utils.registry import TOOL_REGISTRY, TEMPLATE_REGISTRY
         load_dotenv(override=True)
         model = os.getenv("RESPONSES_MODEL", "gpt-5-mini")
         instructions = os.getenv("RESPONSES_INSTRUCTIONS")
         enabled_tools = [t.strip() for t in os.getenv("ENABLED_TOOLS", "").split(",") if t.strip()]
-
-        # Initialize dynamic function-calling registry and register tools
-        # TODO: Allow the user to configure tool/template registry from the setup page
-        registry = ToolRegistry()
-        registry.add_function(get_weather)
-        TEMPLATE_REGISTRY: dict[str, str | tuple[str, callable]] = {
-            "get_weather": "components/weather-widget.html",
-        }
 
         # Build tools
         tools: list[Dict[str, Any]] = []
@@ -112,12 +104,13 @@ async def stream_response(
                 "container": {"type": "auto"}
             })
         if "function" in enabled_tools:
-            for reg in registry.list():
+            for reg in TOOL_REGISTRY.list():
                 tool_def = get_function_tool_def(reg.fn)
                 # Ensure the published tool name matches the registry name
                 if tool_def.get("name") != reg.name:
                     tool_def["name"] = reg.name
                 tools.append(tool_def)
+                logger.info(f"tool def: {tool_def}")
         if "mcp" in enabled_tools:
             # TODO: make configurable and implement tool appending logic
             # tools.append({
@@ -141,7 +134,7 @@ async def stream_response(
         )
 
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
-            nonlocal model, conversation_id, tools, instructions, registry
+            nonlocal model, conversation_id, tools, instructions, TOOL_REGISTRY
             current_item_id: str = ""
             # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
@@ -261,7 +254,7 @@ async def stream_response(
                                     arguments_json = json.loads(event.item.arguments)
 
                                     # Dispatch via registry
-                                    result: ToolResult[Any] = await registry.call(function_name, arguments_json, context=Context())
+                                    result: ToolResult[Any] = await TOOL_REGISTRY.call(function_name, arguments_json, context=Context())
 
                                     # Render output (custom widget for weather, generic otherwise)
                                     try:

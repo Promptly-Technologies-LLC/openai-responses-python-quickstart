@@ -8,7 +8,9 @@ from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from urllib.parse import quote
 
-from utils.env_file import update_env_file
+from utils.config import update_env_file
+from utils.config import generate_registry_file
+from utils.config import read_registry_entries
 
 # Configure logger
 logger = logging.getLogger("uvicorn.error")
@@ -89,27 +91,50 @@ async def read_setup(
             "current_tools": current_tools,
             "current_model": current_model,
             "current_instructions": current_instructions,
-            "available_models": available_models # Pass available models to template
+            "available_models": available_models, # Pass available models to template
+            "existing_registry_entries": read_registry_entries(),
         }
     )
 
 
 @router.post("/config")
 async def save_app_config(
+    action: Optional[str] = Form(default=None),
     tool_types: List[str] = Form(default=[]),
-    model: str = Form(...),
-    instructions: str = Form(...)
+    model: Optional[str] = Form(default=None),
+    instructions: Optional[str] = Form(default=None),
+    reg_function_names: List[str] = Form(default=[]),
+    reg_import_paths: List[str] = Form(default=[]),
+    reg_template_paths: List[str] = Form(default=[]),
 ) -> RedirectResponse:
+    status = "success"
+    message_text = ""
+
     try:
-        update_env_file("RESPONSES_MODEL", model, logger)
-        update_env_file("RESPONSES_INSTRUCTIONS", instructions, logger)
-        enabled_tools_csv = ",".join(tool_types)
-        update_env_file("ENABLED_TOOLS", enabled_tools_csv, logger)
-        status = "success"
-        message_text = "Configuration saved."
+        if action == "regenerate_registry":
+            # Align lists by index and drop incomplete rows
+            rows = zip(reg_function_names, reg_import_paths, reg_template_paths)
+            entries: list[tuple[str, str, str]] = [
+                (fn.strip(), imp.strip(), (tpl or "").strip())
+                for fn, imp, tpl in rows
+                if fn.strip() and imp.strip()
+            ]
+            generate_registry_file(entries, logger)
+            status = "success"
+            message_text = "registry.py regenerated."
+        else:
+            # Standard app config save
+            if model is None or instructions is None:
+                raise ValueError("Missing model or instructions")
+            update_env_file("RESPONSES_MODEL", model, logger)
+            update_env_file("RESPONSES_INSTRUCTIONS", instructions, logger)
+            enabled_tools_csv = ",".join(tool_types)
+            update_env_file("ENABLED_TOOLS", enabled_tools_csv, logger)
+            status = "success"
+            message_text = "Configuration saved."
     except Exception as e:
         status = "error"
-        message_text = f"Failed to save configuration: {e}"
+        message_text = f"Operation failed: {e}"
 
     encoded_message = quote(message_text)
     redirect_url = f"/setup/?status={status}&message_text={encoded_message}"
