@@ -8,13 +8,14 @@ from collections.abc import Callable
 from typing import Generic, Optional, TypeVar, get_type_hints, get_origin, get_args, Union, Any
 
 from pydantic import BaseModel
+from openai.types.responses.function_tool_param import FunctionToolParam
 
 from utils.function_definitions import FuncMetadata, func_metadata
 
 
 T = TypeVar("T")
 
-class ToolResult(BaseModel, Generic[T]):
+class FunctionResult(BaseModel, Generic[T]):
     error: Optional[str] = None
     warning: Optional[str] = None
     result: Optional[T] = None
@@ -207,11 +208,11 @@ class ToolRegistry:
         *,
         context: Context | None = None,
         return_structured: bool = False,
-    ) -> ToolResult[Any]:
+    ) -> FunctionResult[Any]:
         """Parse arguments, validate, and call a registered function.
 
-        Always returns a ToolResult wrapper. The `return_structured` flag is
-        currently ignored and raw function results are placed into ToolResult.result.
+        Always returns a FunctionResult wrapper. The `return_structured` flag is
+        currently ignored and raw function results are placed into FunctionResult.result.
         """
         tool = self.get(name)
         if arguments is None:
@@ -219,7 +220,7 @@ class ToolRegistry:
         elif isinstance(arguments, str):
             payload = json.loads(arguments)
             if not isinstance(payload, dict):
-                return ToolResult(error="Top-level arguments must be a JSON object")
+                return FunctionResult(error="Top-level arguments must be a JSON object")
         else:
             payload = arguments
 
@@ -228,14 +229,14 @@ class ToolRegistry:
                 warnings.simplefilter("always")
                 raw_result = await tool.run(payload, context=context, return_structured=False)
             warning_msg = "; ".join(f"{w.category.__name__}: {w.message}" for w in caught) or None
-            return ToolResult(result=raw_result, warning=warning_msg)
+            return FunctionResult(result=raw_result, warning=warning_msg)
         except Exception as e:
-            return ToolResult(error=str(e))
+            return FunctionResult(error=str(e))
 
     def get_tool_def(
         self,
         name: str
-    ) -> dict[str, Any]:
+    ) -> FunctionToolParam:
         """
         Build a function tool definition from a callable using Pydantic-generated JSON Schema.
 
@@ -259,7 +260,7 @@ class ToolRegistry:
         }
         return tool_def
 
-    def get_tool_def_list(self) -> list[dict[str, Any]]:
+    def get_tool_def_list(self) -> list[FunctionToolParam]:
         return [self.get_tool_def(tool.name) for tool in self.list()]
 
 if __name__ == "__main__":

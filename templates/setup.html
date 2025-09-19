@@ -102,7 +102,7 @@
               {% if "function" in current_tools %}
                 <div class="setupSection" style="margin-top: 20px;">
                   <h3>Register Custom Functions</h3>
-                  <p class="setupMessage">Provide function entries to include in <code>utils/registry.py</code>. Use module import path for functions and a template path relative to the <code>templates/</code> directory (e.g., <code>components/weather-widget.html</code>). If you paste a path beginning with <code>templates/</code>, it will be normalized automatically.</p>
+                  <p class="setupMessage">Provide function entries to include in <code>tool.config.json</code>. Use module import path for functions and a template path relative to the <code>templates/</code> directory (e.g., <code>components/weather-widget.html</code>). If you paste a path beginning with <code>templates/</code>, it will be normalized automatically.</p>
 
                   <form action="{{ url_for('save_app_config') }}" method="POST" id="registry-form">
                     <input type="hidden" name="action" value="regenerate_registry">
@@ -110,48 +110,21 @@
                     <div id="registry-rows">
                       {% if existing_registry_entries %}
                         {% for entry in existing_registry_entries %}
-                          <div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
-                            <div>
-                              <label for="fn-{{ loop.index0 }}">Function Name</label>
-                              <input type="text" id="fn-{{ loop.index0 }}" name="reg_function_names" class="input" value="{{ entry.function_name }}" autocomplete="off">
-                            </div>
-                            <div>
-                              <label for="imp-{{ loop.index0 }}">Import Path</label>
-                              <input type="text" id="imp-{{ loop.index0 }}" name="reg_import_paths" class="input" value="{{ entry.import_path }}" autocomplete="off">
-                            </div>
-                            <div>
-                              <label for="tpl-{{ loop.index0 }}">Template Path <span style="opacity:0.7;">(optional)</span></label>
-                              <div style="display: flex; gap: 8px; align-items: center;">
-                                <input type="text" id="tpl-{{ loop.index0 }}" name="reg_template_paths" class="input" value="{{ entry.template_path }}" placeholder="components/widget.html (optional)" autocomplete="off">
-                                <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
-                              </div>
-                            </div>
-                          </div>
+                          {% set index = loop.index0 %}
+                          {% set name = entry.name %}
+                          {% set import_path = entry.import_path %}
+                          {% set template_path = entry.template_path %}
+                          {% include 'components/registry-row.html' %}
                         {% endfor %}
                       {% else %}
-                      <div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
-                        <div>
-                          <label for="fn-0">Function Name</label>
-                          <input type="text" id="fn-0" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off">
-                        </div>
-                        <div>
-                          <label for="imp-0">Import Path</label>
-                          <input type="text" id="imp-0" name="reg_import_paths" class="input" placeholder="utils.custom_functions" autocomplete="off">
-                        </div>
-                        <div>
-                          <label for="tpl-0">Template Path <span style="opacity:0.7;">(optional)</span></label>
-                          <div style="display: flex; gap: 8px; align-items: center;">
-                            <input type="text" id="tpl-0" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
-                            <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
-                          </div>
-                        </div>
-                      </div>
+                        {% set index = 0 %}
+                        {% include 'components/registry-row.html' %}
                       {% endif %}
                     </div>
 
                     <div style="display:flex; gap: 10px;">
                       <button type="button" class="button" hx-get="{{ url_for('new_registry_row') }}" hx-target="#registry-rows" hx-swap="beforeend" hx-include="#registry-rows input[name='reg_function_names'], #registry-rows input[name='reg_import_paths'], #registry-rows input[name='reg_template_paths']">Add Function</button>
-                      <button type="submit" class="button">Regenerate registry.py</button>
+                      <button type="submit" class="button">Regenerate tool.config.json</button>
                     </div>
                   </form>
                 </div>

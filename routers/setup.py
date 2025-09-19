@@ -8,9 +8,8 @@ from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from urllib.parse import quote
 
-from utils.config import update_env_file
-from utils.config import generate_registry_file
-from utils.config import read_registry_entries
+from utils.config import update_env_file, generate_registry_file, read_registry_entries
+from utils.registry import CustomFunction
 
 # Configure logger
 logger = logging.getLogger("uvicorn.error")
@@ -37,7 +36,7 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
     """
     try:
         safe_key = api_key.strip().replace("\r", "").replace("\n", "")
-        update_env_file("OPENAI_API_KEY", safe_key, logger)
+        update_env_file("OPENAI_API_KEY", safe_key)
         return RedirectResponse(url="/", headers={"HX-Redirect": "/"}, status_code=303)
     except Exception as e:
         raise HTTPException(
@@ -147,23 +146,23 @@ async def save_app_config(
     try:
         if action == "regenerate_registry":
             # Align lists by index and drop incomplete rows
-            rows = zip(reg_function_names, reg_import_paths, reg_template_paths)
-            entries: list[tuple[str, str, str]] = [
-                (fn.strip(), imp.strip(), (tpl or "").strip())
-                for fn, imp, tpl in rows
-                if fn.strip() and imp.strip()
-            ]
-            generate_registry_file(entries, logger)
+            entries: list[CustomFunction] = []
+            for fn, imp, tpl in zip(reg_function_names, reg_import_paths, reg_template_paths):
+                if fn.strip() and imp.strip():
+                    entries.append(
+                        CustomFunction(name=fn.strip(), import_path=imp.strip(), template_path=(tpl or "").strip())
+                    )
+            generate_registry_file(entries)
             status = "success"
-            message_text = "registry.py regenerated."
+            message_text = "tool.config.json regenerated."
         else:
             # Standard app config save
             if model is None or instructions is None:
                 raise ValueError("Missing model or instructions")
-            update_env_file("RESPONSES_MODEL", model, logger)
-            update_env_file("RESPONSES_INSTRUCTIONS", instructions, logger)
+            update_env_file("RESPONSES_MODEL", model)
+            update_env_file("RESPONSES_INSTRUCTIONS", instructions)
             enabled_tools_csv = ",".join(tool_types)
-            update_env_file("ENABLED_TOOLS", enabled_tools_csv, logger)
+            update_env_file("ENABLED_TOOLS", enabled_tools_csv)
             status = "success"
             message_text = "Configuration saved."
     except Exception as e:

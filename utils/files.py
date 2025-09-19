@@ -16,7 +16,7 @@ async def get_or_create_vector_store(client: AsyncOpenAI = Depends(lambda: Async
     if vs_id:
         return vs_id
     vector_store = await client.vector_stores.create(name="quickstart-vector-store")
-    update_env_file("VECTOR_STORE_ID", vector_store.id, logger)
+    update_env_file("VECTOR_STORE_ID", vector_store.id)
     return vector_store.id
 
 

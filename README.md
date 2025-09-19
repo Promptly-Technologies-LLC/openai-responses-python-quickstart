@@ -93,10 +93,10 @@ graph TB
 
 Define a custom Python function in a file in the `utils` folder. The function should take serializable input types and return a serializable output type. Ideally, you should annotate each field with a description using `typing.Annotated` and `pydantic.Field`, since these descriptions are provided to the assistant. The assistant will also be provided the function docstring. An example `get_weather` function is provided in the `utils/custom_functions.py`.
 
-Optionally, you can define a custom HTML template in a file in the `templates/components` folder. If a template is provided, function call results will be rendered with the template in the chat UI. The template should take a single `tool` input of the `ToolResult` type:
+Optionally, you can define a custom HTML template in a file in the `templates/components` folder. If a template is provided, function call results will be rendered with the template in the chat UI. The template should take a single `tool` input of the `FunctionResult` type:
 
 ```python
-class ToolResult(BaseModel, Generic[T]):
+class FunctionResult(BaseModel, Generic[T]):
     error: Optional[str] = None
     warning: Optional[str] = None
     result: Optional[T] = None
@@ -110,4 +110,4 @@ After defining your function (and optionally a template), start the server and n
 
 ![Function Registration](./docs/functions.png)
 
-Don't forget to click "Regenerate registry.py" to save your changes. (This will regenerate the `utils/registry.py` file with your new configuration.) You may have to restart the server for the changes to take effect.
+Don't forget to click "Regenerate tool.config.json" to save your changes. (This will regenerate the `tool.config.json` file with your new configuration.)

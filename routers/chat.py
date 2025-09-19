@@ -2,7 +2,8 @@ import logging
 import json
 import asyncio
 from datetime import datetime
-from typing import AsyncGenerator, Dict, Any
+from typing import AsyncGenerator, Dict, Any, Callable, cast
+from pydantic import ValidationError
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter, Form, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
@@ -21,8 +22,9 @@ from openai.types.responses import (
     ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
+
 from openai import AsyncOpenAI
-from utils.function_calling import Context, ToolResult
+from utils.function_calling import Context, FunctionResult
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
 from routers.files import router as files_router
@@ -83,12 +85,17 @@ async def stream_response(
     async def event_generator() -> AsyncGenerator[str, None]:
         # Load config from env
         import os
+        import importlib
         from dotenv import load_dotenv
-        from utils.registry import TOOL_REGISTRY, TEMPLATE_REGISTRY
+        from utils.registry import ToolConfig
+        from utils.function_calling import ToolRegistry
         load_dotenv(override=True)
         model = os.getenv("RESPONSES_MODEL", "gpt-5-mini")
         instructions = os.getenv("RESPONSES_INSTRUCTIONS")
         enabled_tools = [t.strip() for t in os.getenv("ENABLED_TOOLS", "").split(",") if t.strip()]
+        show_tool_call_detail = os.getenv("SHOW_TOOL_CALL_DETAIL", "false").lower() in ["true", "1"]
+        FUNCTION_REGISTRY = ToolRegistry()
+        TEMPLATE_REGISTRY: dict[str, str | tuple[str, callable]] = {}
 
         # Build tools
         tools: list[Dict[str, Any]] = []
@@ -102,20 +109,26 @@ async def stream_response(
                 "type": "code_interpreter",
                 "container": {"type": "auto"}
             })
-        if "function" in enabled_tools:
-            tool_defs = TOOL_REGISTRY.get_tool_def_list()
-            tools.extend(tool_defs)
-        if "mcp" in enabled_tools:
-            # TODO: make configurable and implement tool appending logic
-            # tools.append({
-            #     "type": "mcp",
-            #     "server_label": "",
-            #     "server_description": "",
-            #     "server_url": "",
-            #     "require_approval": "never",
-            #     "authorization": ""
-            # })
-            pass
+        if "function" in enabled_tools or "mcp" in enabled_tools:
+            try:
+                with open("tool.config.json", "r") as f:
+                    TOOL_CONFIG = ToolConfig.model_validate_json(f.read())
+            except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
+                logger.error(f"Error loading tool.config.json: {e}")
+                TOOL_CONFIG = ToolConfig(mcp_servers=[], custom_functions=[])
+            if "function" in enabled_tools:
+                for function_config in TOOL_CONFIG.custom_functions:
+                    function_module = importlib.import_module(function_config.import_path)
+                    function_fn: Callable[..., Any] = cast(Callable[..., Any], getattr(function_module, function_config.name))
+                    FUNCTION_REGISTRY.add_function(function_fn, name=function_config.name)
+                    if function_config.template_path:
+                        TEMPLATE_REGISTRY.update({
+                            function_config.name: function_config.template_path,
+                        })
+                tool_defs = FUNCTION_REGISTRY.get_tool_def_list()
+                tools.extend(tool_defs)
+            if "mcp" in enabled_tools:
+                tools.extend(TOOL_CONFIG.mcp_servers)
 
         stream = await client.responses.create(
             input="",
@@ -128,7 +141,7 @@ async def stream_response(
         )
 
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
-            nonlocal model, conversation_id, tools, instructions, TOOL_REGISTRY
+            nonlocal model, conversation_id, tools, instructions, FUNCTION_REGISTRY, show_tool_call_detail
             current_item_id: str = ""
             # Accumulate function call args per current_item_id
             fn_args_buffer: Dict[str, str] = {}
@@ -160,10 +173,6 @@ async def stream_response(
 
                             case ResponseMcpListToolsFailedEvent():
                                 # TODO: handle this (currently triggers Network/stream error exception handler)
-                                continue
-
-                            case ResponseMcpCallArgumentsDeltaEvent():
-                                # TODO: handle this
                                 continue
 
                             case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
@@ -223,7 +232,7 @@ async def stream_response(
                                 if event.delta and current_item_id:
                                     yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
-                            case ResponseFunctionCallArgumentsDeltaEvent():
+                            case ResponseFunctionCallArgumentsDeltaEvent() | ResponseMcpCallArgumentsDeltaEvent():
                                 current_item_id = event.item_id
                                 delta = event.delta
                                 if current_item_id:
@@ -248,7 +257,7 @@ async def stream_response(
                                     arguments_json = json.loads(event.item.arguments)
 
                                     # Dispatch via registry
-                                    result: ToolResult[Any] = await TOOL_REGISTRY.call(function_name, arguments_json, context=Context())
+                                    result: FunctionResult[Any] = await FUNCTION_REGISTRY.call(function_name, arguments_json, context=Context())
 
                                     # Render output (custom widget for weather, generic otherwise)
                                     try:
