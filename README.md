@@ -11,7 +11,7 @@ Lower-level feature improvements include:
 - A native web search tool
 - A native image generation tool
 - A computer use tool
-- MCP tool support
+- Support for calling tools via remote MCP servers
 - Support for more models
 
 Note that most of the new features are not yet implemented in this repo.
@@ -91,6 +91,23 @@ graph TB
 
 ## Defining Custom Functions
 
-Define custom functions in the `utils/custom_functions.py` file. An example `get_weather` function is provided. You will need to import your function in `routers/chat.py` and add your execution logic to the `event_generator` function (search for `get_weather` in that file to see a function execution example). See also `templates/components/weather-widget.html` for an example widget for displaying the function call results to the end-user.
+Define a custom Python function in a file in the `utils` folder. The function should take serializable input types and return a serializable output type. Ideally, you should annotate each field with a description using `typing.Annotated` and `pydantic.Field`, since these descriptions are provided to the assistant. The assistant will also be provided the function docstring. An example `get_weather` function is provided in the `utils/custom_functions.py`.
 
-Ultimately I plan to support a more intuitive workflow for defining custom functions. Please contribute a PR if you'd like to help!
+Optionally, you can define a custom HTML template in a file in the `templates/components` folder. If a template is provided, function call results will be rendered with the template in the chat UI. The template should take a single `tool` input of the `ToolResult` type:
+
+```python
+class ToolResult(BaseModel, Generic[T]):
+    error: Optional[str] = None
+    warning: Optional[str] = None
+    result: Optional[T] = None
+```
+
+The template should handle both the result case (to display the function call results to the end-user) and the error case (to alert the user that the function call failed). Handling the warning case is optional.
+
+An example `weather-widget.html` template is provided in the `templates/components` folder.
+
+After defining your function (and optionally a template), start the server and navigate to the `/setup` page to register your function and template.
+
+![Function Registration](./docs/functions.png)
+
+Don't forget to click "Regenerate registry.py" to save your changes. (This will regenerate the `utils/registry.py` file with your new configuration.) You may have to restart the server for the changes to take effect.
