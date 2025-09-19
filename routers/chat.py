@@ -22,7 +22,6 @@ from openai.types.responses import (
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
 from openai import AsyncOpenAI
-from utils.function_definitions import get_function_tool_def
 from utils.function_calling import Context, ToolResult
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
@@ -104,13 +103,8 @@ async def stream_response(
                 "container": {"type": "auto"}
             })
         if "function" in enabled_tools:
-            for reg in TOOL_REGISTRY.list():
-                tool_def = get_function_tool_def(reg.fn)
-                # Ensure the published tool name matches the registry name
-                if tool_def.get("name") != reg.name:
-                    tool_def["name"] = reg.name
-                tools.append(tool_def)
-                logger.info(f"tool def: {tool_def}")
+            tool_defs = TOOL_REGISTRY.get_tool_def_list()
+            tools.extend(tool_defs)
         if "mcp" in enabled_tools:
             # TODO: make configurable and implement tool appending logic
             # tools.append({

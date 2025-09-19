@@ -231,3 +231,39 @@ class ToolRegistry:
             return ToolResult(result=raw_result, warning=warning_msg)
         except Exception as e:
             return ToolResult(error=str(e))
+
+    def get_tool_def(
+        self,
+        name: str
+    ) -> dict[str, Any]:
+        """
+        Build a function tool definition from a callable using Pydantic-generated JSON Schema.
+
+        - Uses the first non-empty line of the function docstring as description (unless provided).
+        - Respects any field aliases set by `func_metadata` (e.g., to avoid BaseModel attribute shadowing).
+        - Ensures additionalProperties is False at the top-level schema.
+        """
+        tool = self.get(name)
+        params_schema = tool.parameters
+        if isinstance(params_schema, dict):
+            # Shallow copy then enforce top-level schema constraints
+            params_schema = dict(params_schema)
+            params_schema.setdefault("type", "object")
+            params_schema.setdefault("additionalProperties", False)
+        tool_def = {
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": params_schema,
+            "strict": False,
+        }
+        return tool_def
+
+    def get_tool_def_list(self) -> list[dict[str, Any]]:
+        return [self.get_tool_def(tool.name) for tool in self.list()]
+
+if __name__ == "__main__":
+    from utils.custom_functions import get_weather
+    tr = ToolRegistry()
+    tr.add_function(get_weather)
+    print(tr.get_tool_def("get_weather"))
