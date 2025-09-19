@@ -1,0 +1,19 @@
+<div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
+  <div>
+    <label for="fn-{{ index }}">Function Name</label>
+    <input type="text" id="fn-{{ index }}" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off">
+  </div>
+  <div>
+    <label for="imp-{{ index }}">Import Path</label>
+    <input type="text" id="imp-{{ index }}" name="reg_import_paths" class="input" placeholder="utils.custom_functions" autocomplete="off">
+  </div>
+  <div>
+    <label for="tpl-{{ index }}">Template Path <span style="opacity:0.7;">(optional)</span></label>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <input type="text" id="tpl-{{ index }}" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
+      <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
+    </div>
+  </div>
+</div>
+
+

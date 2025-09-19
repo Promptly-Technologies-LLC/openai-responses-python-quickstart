@@ -123,7 +123,7 @@
                               <label for="tpl-{{ loop.index0 }}">Template Path <span style="opacity:0.7;">(optional)</span></label>
                               <div style="display: flex; gap: 8px; align-items: center;">
                                 <input type="text" id="tpl-{{ loop.index0 }}" name="reg_template_paths" class="input" value="{{ entry.template_path }}" placeholder="components/widget.html (optional)" autocomplete="off">
-                                <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
+                                <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
                               </div>
                             </div>
                           </div>
@@ -142,7 +142,7 @@
                           <label for="tpl-0">Template Path <span style="opacity:0.7;">(optional)</span></label>
                           <div style="display: flex; gap: 8px; align-items: center;">
                             <input type="text" id="tpl-0" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
-                            <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
+                            <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
                           </div>
                         </div>
                       </div>
@@ -150,42 +150,12 @@
                     </div>
 
                     <div style="display:flex; gap: 10px;">
-                      <button type="button" class="button" onclick="addRegistryItem()">Add Function</button>
+                      <button type="button" class="button" hx-get="{{ url_for('new_registry_row') }}" hx-target="#registry-rows" hx-swap="beforeend" hx-include="#registry-rows input[name='reg_function_names'], #registry-rows input[name='reg_import_paths'], #registry-rows input[name='reg_template_paths']">Add Function</button>
                       <button type="submit" class="button">Regenerate registry.py</button>
                     </div>
                   </form>
                 </div>
-                <script>
-                function addRegistryItem() {
-                  const container = document.getElementById('registry-rows');
-                  const index = container.querySelectorAll('.registry-row').length;
-                  const row = document.createElement('div');
-                  row.className = 'registry-row';
-                  row.style.cssText = 'display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;';
-                  row.innerHTML = `
-                    <div>
-                      <label for="fn-${index}">Function Name</label>
-                      <input type="text" id="fn-${index}" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off">
-                    </div>
-                    <div>
-                      <label for="imp-${index}">Import Path</label>
-                      <input type="text" id="imp-${index}" name="reg_import_paths" class="input" placeholder="utils.custom_functions" autocomplete="off">
-                    </div>
-                    <div>
-                      <label for="tpl-${index}">Template Path <span style="opacity:0.7;">(optional)</span></label>
-                      <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="text" id="tpl-${index}" name="reg_template_paths" class="input" placeholder="components/widget.html (optional)" autocomplete="off">
-                        <button type="button" class="button" onclick="removeRegistryItem(this)" aria-label="Remove row">✕</button>
-                      </div>
-                    </div>
-                  `;
-                  container.appendChild(row);
-                }
-                function removeRegistryItem(btn) {
-                  const row = btn.closest('.registry-row');
-                  if (row) row.remove();
-                }
-                </script>
+                
               {% endif %}
           {% endif %}
         </div>

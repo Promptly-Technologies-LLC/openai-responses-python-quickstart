@@ -97,6 +97,40 @@ async def read_setup(
     )
 
 
+# HTMX endpoints for registry row add/delete
+@router.get("/registry-row")
+async def new_registry_row(request: Request) -> Response:
+    """Return a single registry row fragment.
+
+    Computes the next index from incoming lists (sent via hx-include) or
+    from an explicit `index` query parameter.
+    """
+    qp = request.query_params
+    try:
+        # Determine next index robustly from any of the lists or explicit param
+        provided_index = qp.get("index")
+        if provided_index is not None:
+            index = int(provided_index)
+        else:
+            fn_len = len(qp.getlist("reg_function_names"))
+            imp_len = len(qp.getlist("reg_import_paths"))
+            tpl_len = len(qp.getlist("reg_template_paths"))
+            index = max(fn_len, imp_len, tpl_len)
+    except Exception:
+        index = 0
+
+    return templates.TemplateResponse(
+        "components/registry-row.html",
+        {"request": request, "index": index},
+    )
+
+
+@router.delete("/registry-row")
+async def delete_registry_row() -> Response:
+    """Return empty HTML so the client can remove the row using hx-swap=outerHTML."""
+    return Response(content="", media_type="text/html", status_code=200)
+
+
 @router.post("/config")
 async def save_app_config(
     action: Optional[str] = Form(default=None),
