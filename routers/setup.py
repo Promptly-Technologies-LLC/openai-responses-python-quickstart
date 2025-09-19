@@ -76,6 +76,9 @@ async def read_setup(
     current_instructions = os.getenv("RESPONSES_INSTRUCTIONS")
     enabled_tools_csv = os.getenv("ENABLED_TOOLS", "")
     current_tools = [t.strip() for t in enabled_tools_csv.split(",") if t.strip()]
+    # SHOW_TOOL_CALL_DETAIL flag
+    show_detail_env = os.getenv("SHOW_TOOL_CALL_DETAIL", "false")
+    current_show_tool_call_detail = show_detail_env.lower() in {"1", "true", "yes", "on"}
 
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."
@@ -90,6 +93,7 @@ async def read_setup(
             "current_tools": current_tools,
             "current_model": current_model,
             "current_instructions": current_instructions,
+            "current_show_tool_call_detail": current_show_tool_call_detail,
             "available_models": available_models, # Pass available models to template
             "existing_registry_entries": read_registry_entries(),
         }
@@ -136,6 +140,7 @@ async def save_app_config(
     tool_types: List[str] = Form(default=[]),
     model: Optional[str] = Form(default=None),
     instructions: Optional[str] = Form(default=None),
+    show_tool_call_detail: Optional[str] = Form(default=None),
     reg_function_names: List[str] = Form(default=[]),
     reg_import_paths: List[str] = Form(default=[]),
     reg_template_paths: List[str] = Form(default=[]),
@@ -163,6 +168,9 @@ async def save_app_config(
             update_env_file("RESPONSES_INSTRUCTIONS", instructions)
             enabled_tools_csv = ",".join(tool_types)
             update_env_file("ENABLED_TOOLS", enabled_tools_csv)
+            # Persist SHOW_TOOL_CALL_DETAIL flag
+            show_detail_value = "true" if (show_tool_call_detail or "").lower() in {"1", "true", "yes", "on"} else "false"
+            update_env_file("SHOW_TOOL_CALL_DETAIL", show_detail_value)
             status = "success"
             message_text = "Configuration saved."
     except Exception as e:
