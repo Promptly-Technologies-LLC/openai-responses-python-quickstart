@@ -14,7 +14,7 @@ Lower-level feature improvements include:
 - Support for calling tools via remote MCP servers
 - Support for more models
 
-Note that most of the new features are not yet implemented in this repo.
+Note that this template implements support for MCP servers, but does not yet support web search, image generation, or computer use.
 
 ## Quickstart Setup
 
