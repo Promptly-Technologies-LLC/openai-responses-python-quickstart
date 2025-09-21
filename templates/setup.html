@@ -90,6 +90,10 @@
                       <input type="checkbox" name="tool_types" value="function" {% if "function" in current_tools %}checked{% endif %}>
                       Custom Functions
                     </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="mcp" {% if "mcp" in current_tools %}checked{% endif %}>
+                      MCP Tools
+                    </label>
                   </div>
                   <div class="centered-button-container">
                     <button 
@@ -136,6 +140,38 @@
                   </form>
                 </div>
                 
+              {% endif %}
+              {% if "mcp" in current_tools %}
+                <div class="setupSection" style="margin-top: 20px;">
+                  <h3>Register MCP Servers</h3>
+                  <p class="setupMessage">Add MCP servers to include in <code>tool.config.json</code>. Provide a label and either a server URL or a connector ID.</p>
+
+                  <form action="{{ url_for('save_app_config') }}" method="POST" id="mcp-form">
+                    <input type="hidden" name="action" value="regenerate_registry">
+
+                    <div id="mcp-rows">
+                      {% if existing_mcp_servers %}
+                        {% for srv in existing_mcp_servers %}
+                          {% set index = loop.index0 %}
+                          {% set label = srv.server_label %}
+                          {% set server_url = srv.server_url if 'server_url' in srv else '' %}
+                          {% set connector_id = srv.connector_id if 'connector_id' in srv else '' %}
+                          {% set authorization = srv.authorization if 'authorization' in srv else '' %}
+                          {% set headers_json = srv.headers_json if 'headers_json' in srv else '' %}
+                          {% include 'components/mcp-row.html' %}
+                        {% endfor %}
+                      {% else %}
+                        {% set index = 0 %}
+                        {% include 'components/mcp-row.html' %}
+                      {% endif %}
+                    </div>
+
+                    <div style="display:flex; gap: 10px;">
+                      <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons']">Add MCP Server</button>
+                      <button type="submit" class="button">Regenerate tool.config.json</button>
+                    </div>
+                  </form>
+                </div>
               {% endif %}
           {% endif %}
         </div>

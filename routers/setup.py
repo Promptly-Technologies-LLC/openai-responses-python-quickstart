@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from typing import Optional, List
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Form, Request
@@ -8,8 +9,7 @@ from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
 from urllib.parse import quote
 
-from utils.config import update_env_file, generate_registry_file, read_registry_entries
-from utils.registry import CustomFunction
+from utils.config import update_env_file, generate_registry_file, read_registry_entries, read_mcp_servers, CustomFunction
 
 # Configure logger
 logger = logging.getLogger("uvicorn.error")
@@ -83,6 +83,26 @@ async def read_setup(
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."
     
+    # Prepare MCP servers with JSON-encoded headers for safe templating
+    existing_mcp_servers_raw = read_mcp_servers()
+    existing_mcp_servers: list[dict] = []
+    for srv in existing_mcp_servers_raw:
+        # srv is a TypedDict; cast to plain dict and compute headers_json
+        entry = {
+            "server_label": srv.get("server_label", ""),
+            **({"server_url": srv["server_url"]} if "server_url" in srv else {}),
+            **({"connector_id": srv["connector_id"]} if "connector_id" in srv else {}),
+            **({"authorization": srv["authorization"]} if "authorization" in srv else {}),
+        }
+        if "headers" in srv and isinstance(srv["headers"], dict):
+            try:
+                entry["headers_json"] = json.dumps(srv["headers"]) or ""
+            except Exception:
+                entry["headers_json"] = ""
+        else:
+            entry["headers_json"] = ""
+        existing_mcp_servers.append(entry)
+
     return templates.TemplateResponse(
         "setup.html",
         {
@@ -96,6 +116,7 @@ async def read_setup(
             "current_show_tool_call_detail": current_show_tool_call_detail,
             "available_models": available_models, # Pass available models to template
             "existing_registry_entries": read_registry_entries(),
+            "existing_mcp_servers": existing_mcp_servers,
         }
     )
 
@@ -134,6 +155,40 @@ async def delete_registry_row() -> Response:
     return Response(content="", media_type="text/html", status_code=200)
 
 
+@router.get("/mcp-row")
+async def new_mcp_row(request: Request) -> Response:
+    """Return a single MCP row fragment.
+
+    Computes the next index from incoming lists (sent via hx-include) or
+    from an explicit `index` query parameter.
+    """
+    qp = request.query_params
+    try:
+        provided_index = qp.get("index")
+        if provided_index is not None:
+            index = int(provided_index)
+        else:
+            lbl_len = len(qp.getlist("mcp_labels"))
+            url_len = len(qp.getlist("mcp_server_urls"))
+            conn_len = len(qp.getlist("mcp_connector_ids"))
+            auth_len = len(qp.getlist("mcp_authorizations"))
+            hdr_len = len(qp.getlist("mcp_headers_jsons"))
+            index = max(lbl_len, url_len, conn_len, auth_len, hdr_len)
+    except Exception:
+        index = 0
+
+    return templates.TemplateResponse(
+        "components/mcp-row.html",
+        {"request": request, "index": index},
+    )
+
+
+@router.delete("/mcp-row")
+async def delete_mcp_row() -> Response:
+    """Return empty HTML so the client can remove the row using hx-swap=outerHTML."""
+    return Response(content="", media_type="text/html", status_code=200)
+
+
 @router.post("/config")
 async def save_app_config(
     action: Optional[str] = Form(default=None),
@@ -144,6 +199,11 @@ async def save_app_config(
     reg_function_names: List[str] = Form(default=[]),
     reg_import_paths: List[str] = Form(default=[]),
     reg_template_paths: List[str] = Form(default=[]),
+    mcp_labels: List[str] = Form(default=[]),
+    mcp_server_urls: List[str] = Form(default=[]),
+    mcp_connector_ids: List[str] = Form(default=[]),
+    mcp_authorizations: List[str] = Form(default=[]),
+    mcp_headers_jsons: List[str] = Form(default=[]),
 ) -> RedirectResponse:
     status = "success"
     message_text = ""
@@ -157,7 +217,55 @@ async def save_app_config(
                     entries.append(
                         CustomFunction(name=fn.strip(), import_path=imp.strip(), template_path=(tpl or "").strip())
                     )
-            generate_registry_file(entries)
+            # Build MCP servers
+            mcp_servers: list[dict] = []
+            # Ensure lists have the same length by padding with empty strings
+            max_len = max(
+                len(mcp_labels),
+                len(mcp_server_urls),
+                len(mcp_connector_ids),
+                len(mcp_authorizations),
+                len(mcp_headers_jsons),
+            )
+            def get_or_empty(items: List[str], i: int) -> str:
+                try:
+                    return (items[i] or "").strip()
+                except IndexError:
+                    return ""
+            for i in range(max_len):
+                label = get_or_empty(mcp_labels, i)
+                server_url = get_or_empty(mcp_server_urls, i)
+                connector_id = get_or_empty(mcp_connector_ids, i)
+                authorization = get_or_empty(mcp_authorizations, i)
+                headers_json = get_or_empty(mcp_headers_jsons, i)
+                if not label:
+                    continue
+                # must have either server_url or connector_id
+                if not server_url and not connector_id:
+                    continue
+                entry: dict = {
+                    "type": "mcp",
+                    "server_label": label,
+                }
+                if server_url:
+                    entry["server_url"] = server_url
+                if connector_id:
+                    entry["connector_id"] = connector_id
+                if authorization:
+                    entry["authorization"] = authorization
+                if headers_json:
+                    try:
+                        headers_obj = json.loads(headers_json)
+                    except json.JSONDecodeError as e:
+                        raise ValueError(f"Invalid headers JSON for MCP server '{label}': {e}")
+                    if not isinstance(headers_obj, dict):
+                        raise ValueError(f"Headers for MCP server '{label}' must be a JSON object")
+                    # Optionally coerce all values to strings
+                    coerced: dict[str, str] = {str(k): str(v) for k, v in headers_obj.items()}
+                    entry["headers"] = coerced
+                mcp_servers.append(entry)
+
+            generate_registry_file(entries, mcp_servers=mcp_servers)
             status = "success"
             message_text = "tool.config.json regenerated."
         else:

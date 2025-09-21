@@ -1,0 +1,27 @@
+<div class="mcp-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
+  <div>
+    <label for="mcp-label-{{ index }}">Server Label</label>
+    <input type="text" id="mcp-label-{{ index }}" name="mcp_labels" class="input" placeholder="My Server" autocomplete="off" value="{{ label|default('') }}">
+  </div>
+  <div>
+    <label for="mcp-url-{{ index }}">Server URL <span style="opacity:0.7;">(leave blank if using connector)</span></label>
+    <input type="text" id="mcp-url-{{ index }}" name="mcp_server_urls" class="input" placeholder="https://example.com/mcp" autocomplete="off" value="{{ server_url|default('') }}">
+  </div>
+  <div>
+    <label for="mcp-connector-{{ index }}">Connector ID <span style="opacity:0.7;">(optional)</span></label>
+    <input type="text" id="mcp-connector-{{ index }}" name="mcp_connector_ids" class="input" placeholder="connector_dropbox" autocomplete="off" value="{{ connector_id|default('') }}">
+  </div>
+  <div>
+    <label for="mcp-authorization-{{ index }}">Bearer Token <span style="opacity:0.7;">(optional)</span></label>
+    <input type="text" id="mcp-authorization-{{ index }}" name="mcp_authorizations" class="input" placeholder="b772ab113b..." autocomplete="off" value="{{ authorization|default('') }}">
+  </div>
+  <div>
+    <label for="mcp-headers-{{ index }}">Headers JSON <span style="opacity:0.7;">(optional)</span></label>
+    <div style="display: flex; gap: 8px; align-items: start;">
+      <textarea id="mcp-headers-{{ index }}" name="mcp_headers_jsons" class="input" rows="3" placeholder="{\n  &quot;X-Api-Key&quot;: &quot;...&quot;\n}">{{ headers_json|default('') }}</textarea>
+      <button type="button" class="button" hx-delete="{{ url_for('delete_mcp_row') }}" hx-target="closest .mcp-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
+    </div>
+  </div>
+</div>
+
+

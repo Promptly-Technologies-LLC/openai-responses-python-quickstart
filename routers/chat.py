@@ -87,7 +87,7 @@ async def stream_response(
         import os
         import importlib
         from dotenv import load_dotenv
-        from utils.registry import ToolConfig
+        from utils.config import ToolConfig
         from utils.function_calling import ToolRegistry
         load_dotenv(override=True)
         model = os.getenv("RESPONSES_MODEL", "gpt-5-mini")

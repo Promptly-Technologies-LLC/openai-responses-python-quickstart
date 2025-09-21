@@ -1,10 +1,23 @@
 import os
 import json
+from typing import Optional
+import pydantic
 from pydantic import ValidationError
-from utils.registry import ToolConfig, CustomFunction
+from openai.types.responses.tool_param import Mcp
 from logging import getLogger
 
 logger = getLogger("uvicorn.error")
+
+
+class CustomFunction(pydantic.BaseModel):
+    name: str
+    import_path: str
+    template_path: Optional[str]
+
+
+class ToolConfig(pydantic.BaseModel):
+    mcp_servers: list[Mcp]
+    custom_functions: list[CustomFunction]
 
 def update_env_file(var_name: str, var_value: str):
     """
@@ -48,6 +61,7 @@ def update_env_file(var_name: str, var_value: str):
 
 def generate_registry_file(
     entries: list[CustomFunction],
+    mcp_servers: list[Mcp] | None = None,
     registry_path: str = "tool.config.json",
 ) -> None:
     """
@@ -57,14 +71,9 @@ def generate_registry_file(
         entries: A list of CustomFunction objects.
         registry_path: The path to the tool.config.json file
     """
-    if not os.path.exists(registry_path):
-        return []
-    
+    mcp_servers = mcp_servers or []
     with open(registry_path, "w", encoding="utf-8") as f:
-        tool_config = ToolConfig(
-            custom_functions=entries,
-            mcp_servers=[]
-        )
+        tool_config = ToolConfig(custom_functions=entries, mcp_servers=mcp_servers)
         f.write(tool_config.model_dump_json(indent=4))
 
 
@@ -88,3 +97,22 @@ def read_registry_entries(
         return []
     
     return tool_config.custom_functions
+
+
+def read_mcp_servers(
+    registry_path: str = "tool.config.json"
+) -> list[Mcp]:
+    """
+    Read the current tool.config.json and extract MCP servers for the UI.
+    """
+    if not os.path.exists(registry_path):
+        return []
+
+    try:
+        with open(registry_path, "r", encoding="utf-8") as f:
+            tool_config = ToolConfig.model_validate_json(f.read())
+    except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
+        logger.error(f"Error loading tool.config.json: {e}")
+        return []
+
+    return tool_config.mcp_servers
