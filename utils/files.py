@@ -39,8 +39,7 @@ async def get_files_for_vector_store(vector_store_id: str, client: AsyncOpenAI) 
                     "id": vs_file.id,
                     "filename": file_object.filename or "unknown_filename",
                     "status": vs_file.status,
-                    "last_error": vs_file.last_error.message if vs_file.last_error else None, # Include error message if failed
-                    "status_details": getattr(vs_file, 'status_details', None) # Include if available
+                    "last_error": vs_file.last_error.message if vs_file.last_error else None # Include error message if failed
                 })
             except Exception as file_retrieve_error:
                  # If retrieving the base FileObject fails, still list the VS file entry
@@ -49,8 +48,7 @@ async def get_files_for_vector_store(vector_store_id: str, client: AsyncOpenAI) 
                     "id": vs_file.id,
                     "filename": f"File ID: {vs_file.id} (retrieval failed)",
                     "status": vs_file.status,
-                    "last_error": vs_file.last_error.message if vs_file.last_error else None,
-                    "status_details": getattr(vs_file, 'status_details', None)
+                    "last_error": vs_file.last_error.message if vs_file.last_error else None
                 })
 
         return files_data

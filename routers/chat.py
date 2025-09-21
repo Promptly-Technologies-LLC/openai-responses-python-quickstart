@@ -2,6 +2,7 @@ import logging
 import json
 import asyncio
 from datetime import datetime
+from types import ModuleType
 from typing import AsyncGenerator, Dict, Any, Callable, cast
 from pydantic import ValidationError
 from fastapi.templating import Jinja2Templates
@@ -22,7 +23,7 @@ from openai.types.responses import (
     ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
-
+from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
 from utils.function_calling import Context, FunctionResult
 from utils.sse import sse_format
@@ -95,7 +96,7 @@ async def stream_response(
         enabled_tools = [t.strip() for t in os.getenv("ENABLED_TOOLS", "").split(",") if t.strip()]
         show_tool_call_detail = os.getenv("SHOW_TOOL_CALL_DETAIL", "false").lower() in ["true", "1"]
         FUNCTION_REGISTRY = ToolRegistry()
-        TEMPLATE_REGISTRY: dict[str, str | tuple[str, callable]] = {}
+        TEMPLATE_REGISTRY: dict[str, str | tuple[str, Callable]] = {}
 
         # Build tools
         tools: list[Dict[str, Any]] = []
@@ -118,7 +119,9 @@ async def stream_response(
                 TOOL_CONFIG = ToolConfig(mcp_servers=[], custom_functions=[])
             if "function" in enabled_tools:
                 for function_config in TOOL_CONFIG.custom_functions:
-                    function_module = importlib.import_module(function_config.import_path)
+                    function_module: ModuleType = importlib.import_module(function_config.import_path)
+                    if not hasattr(function_module, function_config.name):
+                        raise ValueError(f"Invalid tool.config.json: Function {function_config.name} not found in {function_config.import_path}")
                     function_fn: Callable[..., Any] = cast(Callable[..., Any], getattr(function_module, function_config.name))
                     FUNCTION_REGISTRY.add_function(function_fn, name=function_config.name)
                     if function_config.template_path:
@@ -134,7 +137,7 @@ async def stream_response(
             input="",
             conversation=conversation_id,
             model=model,
-            tools=tools or None,
+            tools=tools or NOT_GIVEN,
             instructions=instructions,
             parallel_tool_calls=False,
             stream=True
@@ -295,7 +298,7 @@ async def stream_response(
                                             input="",
                                             conversation=conversation_id,
                                             model=model,
-                                            tools=tools or None,
+                                            tools=tools or NOT_GIVEN,
                                             instructions=instructions,
                                             parallel_tool_calls=False,
                                             stream=True

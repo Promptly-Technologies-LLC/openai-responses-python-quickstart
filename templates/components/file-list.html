@@ -11,9 +11,6 @@
                     {% if file.last_error %}
                         <span class="errorMessage">Error: {{ file.last_error }}</span>
                     {% endif %}
-                    {% if file.status_details %}
-                        <span class="errorMessage">Details: {{ file.status_details }}</span>
-                    {% endif %}
                     <button 
                         class="button deleteButton"
                         hx-delete="{{ url_for('delete_file', file_id=file.id) }}"

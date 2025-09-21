@@ -1,4 +1,5 @@
 import inspect
+import functools
 import json
 from logging import getLogger
 from collections.abc import Awaitable, Callable, Sequence
@@ -156,6 +157,62 @@ class FuncMetadata(BaseModel):
     )
 
 
+def get_callable_name(fn: Any) -> str:
+    """Return a sensible name for any callable.
+
+    Falls back to the type name when no function-style name is available.
+    """
+    base = fn
+    while isinstance(base, functools.partial):
+        base = base.func
+
+    name = getattr(base, "__name__", None)
+    if isinstance(name, str) and name:
+        return name
+
+    func_obj = getattr(base, "__func__", None)
+    if func_obj is not None:
+        name = getattr(func_obj, "__name__", None)
+        if isinstance(name, str) and name:
+            return name
+
+    call_obj = getattr(base, "__call__", None)
+    if call_obj is not None:
+        name = getattr(call_obj, "__name__", None)
+        if isinstance(name, str) and name:
+            return name
+
+    return type(base).__name__
+
+
+def _get_callable_globals(fn: Any) -> dict[str, Any]:
+    """Best-effort lookup of globals for any callable.
+
+    Used to resolve forward references during type evaluation.
+    """
+    base = fn
+    while isinstance(base, functools.partial):
+        base = base.func
+
+    glb = getattr(base, "__globals__", None)
+    if isinstance(glb, dict):
+        return glb
+
+    func_obj = getattr(base, "__func__", None)
+    if func_obj is not None:
+        glb = getattr(func_obj, "__globals__", None)
+        if isinstance(glb, dict):
+            return glb
+
+    call_obj = getattr(base, "__call__", None)
+    if call_obj is not None:
+        glb = getattr(call_obj, "__globals__", None)
+        if isinstance(glb, dict):
+            return glb
+
+    return {}
+
+
 def func_metadata(
     func: Callable[..., Any],
     skip_names: Sequence[str] = (),
@@ -201,10 +258,11 @@ def func_metadata(
     sig = _get_typed_signature(func)
     params = sig.parameters
     dynamic_pydantic_model_params: dict[str, Any] = {}
-    globalns = getattr(func, "__globals__", {})
+    func_name = get_callable_name(func)
+    globalns = _get_callable_globals(func)
     for param in params.values():
         if param.name.startswith("_"):
-            raise ValueError(f"Parameter {param.name} of {func.__name__} cannot start with '_'")
+            raise ValueError(f"Parameter {param.name} of {func_name} cannot start with '_'")
         if param.name in skip_names:
             continue
         annotation = param.annotation
@@ -245,7 +303,7 @@ def func_metadata(
         continue
 
     arguments_model = create_model(
-        f"{func.__name__}Arguments",
+        f"{func_name}Arguments",
         **dynamic_pydantic_model_params,
         __base__=ArgModelBase,
     )
@@ -256,17 +314,17 @@ def func_metadata(
     # set up structured output support based on return type annotation
 
     if sig.return_annotation is inspect.Parameter.empty and structured_output is True:
-        raise ValueError(f"Function {func.__name__}: return annotation required for structured output")
+        raise ValueError(f"Function {func_name}: return annotation required for structured output")
 
     output_info = FieldInfo.from_annotation(_get_typed_annotation(sig.return_annotation, globalns))
     annotation = output_info.annotation
 
-    output_model, output_schema, wrap_output = _try_create_model_and_schema(annotation, func.__name__, output_info)
+    output_model, output_schema, wrap_output = _try_create_model_and_schema(annotation, func_name, output_info)
 
     if output_model is None and structured_output is True:
         # Model creation failed or produced warnings - no structured output
         raise ValueError(
-            f"Function {func.__name__}: return type {annotation} is not serializable for structured output"
+            f"Function {func_name}: return type {annotation} is not serializable for structured output"
         )
 
     return FuncMetadata(
@@ -464,7 +522,7 @@ def _get_typed_annotation(annotation: Any, globalns: dict[str, Any]) -> Any:
 def _get_typed_signature(call: Callable[..., Any]) -> inspect.Signature:
     """Get function signature while evaluating forward references"""
     signature = inspect.signature(call)
-    globalns = getattr(call, "__globals__", {})
+    globalns = _get_callable_globals(call)
     typed_params = [
         inspect.Parameter(
             name=param.name,

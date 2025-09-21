@@ -10,7 +10,7 @@ from typing import Generic, Optional, TypeVar, get_type_hints, get_origin, get_a
 from pydantic import BaseModel
 from openai.types.responses.function_tool_param import FunctionToolParam
 
-from utils.function_definitions import FuncMetadata, func_metadata
+from utils.function_definitions import FuncMetadata, func_metadata, get_callable_name
 
 
 T = TypeVar("T")
@@ -55,9 +55,15 @@ def _is_async_callable(obj: Any) -> bool:
 
 def _find_context_parameter(fn: Callable[..., Any]) -> str | None:
     """Find a parameter annotated with our Context type (including Optional/Union)."""
-    try:
-        hints = get_type_hints(fn)
-    except Exception:
+    # Try direct function, then callable's __call__
+    def _get_hints(target: Any) -> dict[str, Any] | None:
+        try:
+            return get_type_hints(target)
+        except Exception:
+            return None
+
+    hints = _get_hints(fn) or _get_hints(getattr(type(fn), "__call__", None))
+    if hints is None:
         return None
 
     for name, anno in hints.items():
@@ -94,7 +100,7 @@ class ToolRegistration(BaseModel):
         structured_output: bool | None = None,
         context_kwarg: str | None = None,
     ) -> "ToolRegistration":
-        func_name = name or fn.__name__
+        func_name = name or get_callable_name(fn)
         func_doc = (description if description is not None else (inspect.getdoc(fn) or "").strip())
         is_async = _is_async_callable(fn)
 
@@ -251,13 +257,13 @@ class ToolRegistry:
             params_schema = dict(params_schema)
             params_schema.setdefault("type", "object")
             params_schema.setdefault("additionalProperties", False)
-        tool_def = {
-            "type": "function",
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": params_schema,
-            "strict": False,
-        }
+        tool_def = FunctionToolParam(
+            type="function",
+            name=tool.name,
+            description=tool.description,
+            parameters=params_schema,
+            strict=False,
+        )
         return tool_def
 
     def get_tool_def_list(self) -> list[FunctionToolParam]:
