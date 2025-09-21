@@ -167,7 +167,7 @@
                     </div>
 
                     <div style="display:flex; gap: 10px;">
-                      <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons']">Add MCP Server</button>
+                      <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons'], #mcp-rows input[name='mcp_require_approvals']">Add MCP Server</button>
                       <button type="submit" class="button">Regenerate tool.config.json</button>
                     </div>
                   </form>

@@ -150,6 +150,7 @@ async def stream_response(
             try:
                 async with s as events:
                     async for event in events:
+                        logger.info(f"Event: {event}")
                         match event:
                             case ResponseCreatedEvent():
                                 response_id = event.response.id

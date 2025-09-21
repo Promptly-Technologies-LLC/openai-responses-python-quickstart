@@ -173,7 +173,8 @@ async def new_mcp_row(request: Request) -> Response:
             conn_len = len(qp.getlist("mcp_connector_ids"))
             auth_len = len(qp.getlist("mcp_authorizations"))
             hdr_len = len(qp.getlist("mcp_headers_jsons"))
-            index = max(lbl_len, url_len, conn_len, auth_len, hdr_len)
+            req_len = len(qp.getlist("mcp_require_approvals"))
+            index = max(lbl_len, url_len, conn_len, auth_len, hdr_len, req_len)
     except Exception:
         index = 0
 
@@ -204,6 +205,7 @@ async def save_app_config(
     mcp_connector_ids: List[str] = Form(default=[]),
     mcp_authorizations: List[str] = Form(default=[]),
     mcp_headers_jsons: List[str] = Form(default=[]),
+    mcp_require_approvals: List[str] = Form(default=[])
 ) -> RedirectResponse:
     status = "success"
     message_text = ""
@@ -226,6 +228,7 @@ async def save_app_config(
                 len(mcp_connector_ids),
                 len(mcp_authorizations),
                 len(mcp_headers_jsons),
+                len(mcp_require_approvals),
             )
             def get_or_empty(items: List[str], i: int) -> str:
                 try:
@@ -238,6 +241,9 @@ async def save_app_config(
                 connector_id = get_or_empty(mcp_connector_ids, i)
                 authorization = get_or_empty(mcp_authorizations, i)
                 headers_json = get_or_empty(mcp_headers_jsons, i)
+                req_approval = get_or_empty(mcp_require_approvals, i).lower() or "never"
+                if req_approval not in {"always", "never"}:
+                    req_approval = "never"
                 if not label:
                     continue
                 # must have either server_url or connector_id
@@ -246,6 +252,8 @@ async def save_app_config(
                 entry: dict = {
                     "type": "mcp",
                     "server_label": label,
+                    # Submitted from frontend (currently hidden static value)
+                    "require_approval": req_approval,
                 }
                 if server_url:
                     entry["server_url"] = server_url
