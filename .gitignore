@@ -11,3 +11,4 @@ __pycache__
 repomix-output.txt
 artifacts/
 uploads/
+tool.config.json

@@ -16,6 +16,20 @@ logger = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # If tool.config.json doens't exist, create it
+    if not os.path.exists("tool.config.json"):
+        import json
+        with open("tool.config.json", "w") as f:
+            f.write(json.dumps(
+                {"mcp_servers": [], "custom_functions": [
+                    {
+                        "name": "get_weather",
+                        "import_path": "utils.custom_functions",
+                        "template_path": "utils/custom_functions.py"}
+                    ]
+                },
+                indent=4
+            ))
     # Optional startup logic
     yield
     # Optional shutdown logic
