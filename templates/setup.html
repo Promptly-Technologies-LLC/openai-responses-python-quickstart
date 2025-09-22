@@ -158,10 +158,12 @@
                           {% set connector_id = srv.connector_id if 'connector_id' in srv else '' %}
                           {% set authorization = srv.authorization if 'authorization' in srv else '' %}
                           {% set headers_json = srv.headers_json if 'headers_json' in srv else '' %}
+                          {% set require_approval = srv.require_approval if 'require_approval' in srv else 'never' %}
                           {% include 'components/mcp-row.html' %}
                         {% endfor %}
                       {% else %}
                         {% set index = 0 %}
+                        {% set require_approval = 'never' %}
                         {% include 'components/mcp-row.html' %}
                       {% endif %}
                     </div>

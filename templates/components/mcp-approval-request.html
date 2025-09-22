@@ -1,0 +1,35 @@
+<!-- mcp-approval-request.html -->
+<div class="approvalCard">
+  <div class="approvalHeader">
+    <strong>Tool requires approval</strong>
+    <div class="approvalMeta">
+      <span>Server:</span> <code>{{ approval_request.server_label }}</code>
+      <span>Tool:</span> <code>{{ approval_request.name }}</code>
+    </div>
+  </div>
+  <details class="approvalDetails">
+    <summary>View call arguments</summary>
+    <pre class="approvalArgs">{{ arguments_pretty }}</pre>
+  </details>
+
+  <div class="approvalActions">
+    <form
+      hx-post="/chat/{{ conversation_id }}/approve"
+      hx-target="#messages"
+      hx-swap="beforeend"
+      hx-sync="this:queue"
+      onsubmit="this.querySelector('input[name=approve]').value = (event.submitter && event.submitter.value) || ''; Array.from(this.querySelectorAll('button')).forEach(b=>{ b.disabled=true })"
+    >
+      <input type="hidden" name="approval_request_id" value="{{ approval_request.id }}" />
+      <input type="hidden" name="approve" id="approve-{{ approval_request.id }}" />
+      <label for="approvalReason-{{ approval_request.id }}">Reason (optional)</label>
+      <textarea id="approvalReason-{{ approval_request.id }}" name="reason" rows="2" placeholder="Why approve or reject? (optional)"></textarea>
+      <div class="buttons">
+        <button type="submit" class="button" name="approve" value="true">Approve</button>
+        <button type="submit" class="button danger" name="approve" value="false">Reject</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+

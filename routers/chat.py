@@ -23,6 +23,8 @@ from openai.types.responses import (
     ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
 )
+from openai.types.responses.response_output_item import McpApprovalRequest
+from openai.types.responses import ResponseFunctionToolCall
 from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
 from utils.function_calling import Context, FunctionResult
@@ -150,7 +152,6 @@ async def stream_response(
             try:
                 async with s as events:
                     async for event in events:
-                        logger.info(f"Event: {event}")
                         match event:
                             case ResponseCreatedEvent():
                                 response_id = event.response.id
@@ -180,6 +181,7 @@ async def stream_response(
                             case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
                                 tool = event.type.split(".")[1].split("_call")[0]
                                 current_item_id = event.item_id
+                                # Skip if 
                                 yield sse_format(
                                         "toolCallCreated",
                                         templates.get_template('components/assistant-step.html').render(
@@ -200,9 +202,7 @@ async def stream_response(
                                             step_id=event.item.id
                                         )
                                     )
-                                if event.item.type in [
-                                    "function_call", "mcp_call"
-                                ]:
+                                if event.item.type == "function_call":
                                     current_item_id = event.item.id
                                     tool_name = event.item.name
                                     yield sse_format(
@@ -211,6 +211,65 @@ async def stream_response(
                                             step_type='toolCall',
                                             step_id=event.item.id,
                                             content=f"Calling {tool_name} tool..." + ("\n" if show_tool_call_detail else "")
+                                        )
+                                    )
+                                if event.item.type == "mcp_call":
+                                    current_item_id = event.item.id
+                                    server_label = event.item.server_label
+                                    tool_name = event.item.name
+                                    # Skip if TOOL_CONFIG.mcp_servers item with same server_label has require_approval set to
+                                    # "always", as approval form provides adequate notification to the user of the tool call
+                                    if any(
+                                        server["server_label"] == server_label and server["require_approval"] == "always"
+                                        for server in TOOL_CONFIG.mcp_servers
+                                    ):
+                                        continue
+                                    yield sse_format(
+                                        "toolCallCreated",
+                                        templates.get_template('components/assistant-step.html').render(
+                                            step_type='toolCall',
+                                            step_id=event.item.id,
+                                            content=f"Calling {tool_name} tool..." + ("\n" if show_tool_call_detail else "")
+                                        )
+                                    )
+                                # Handle MCP approval requests by rendering an approval UI card
+                                if isinstance(event.item, McpApprovalRequest):
+                                    current_item_id = event.item.id
+                                    # Pretty print arguments JSON if possible
+                                    pretty_args: str
+                                    try:
+                                        pretty_args = json.dumps(json.loads(event.item.arguments), indent=2)
+                                    except Exception:
+                                        pretty_args = event.item.arguments
+
+                                    # Ensure approval request exists in conversation state with same id
+                                    # (Note: this is a workaround to resolve a Responses API bug by triggering a
+                                    # commit of conversation state on their server; else approval throws error)
+                                    try:
+                                        await client.conversations.items.create(
+                                            conversation_id=conversation_id,
+                                            items=[{
+                                                "type": "mcp_approval_request",
+                                                "id": event.item.id,
+                                                "arguments": event.item.arguments,
+                                                "name": event.item.name,
+                                                "server_label": event.item.server_label,
+                                            }]
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"Failed to add MCP approval request to conversation: {e}")
+
+                                    approval_card_html = templates.get_template("components/mcp-approval-request.html").render(
+                                        conversation_id=conversation_id,
+                                        approval_request=event.item,
+                                        arguments_pretty=pretty_args
+                                    )
+                                    yield sse_format(
+                                        "mcpApprovalRequest",
+                                        templates.get_template('components/assistant-step.html').render(
+                                            step_type='approvalRequest',
+                                            step_id=event.item.id,
+                                            content_html=approval_card_html
                                         )
                                     )
 
@@ -223,7 +282,6 @@ async def stream_response(
                                     yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                             case ResponseOutputTextAnnotationAddedEvent():
-                                logger.info(f"ResponseOutputTextAnnotationAddedEvent: {event}")
                                 if event.annotation and current_item_id:
                                     if event.annotation["type"] == "file_citation":
                                         filename = event.annotation["filename"]
@@ -254,7 +312,7 @@ async def stream_response(
                                     yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
                             case ResponseOutputItemDoneEvent():
-                                if event.item.type == "function_call":
+                                if isinstance(event.item, ResponseFunctionToolCall):
                                     current_item_id = event.item.id
                                     function_name = event.item.name
                                     arguments_json = json.loads(event.item.arguments)
@@ -337,3 +395,42 @@ async def stream_response(
             "Connection": "keep-alive",
         }
     )
+
+
+@router.post("/approve")
+async def approve_mcp_tool(
+    request: Request,
+    conversation_id: str,
+    approval_request_id: str = Form(...),
+    approve: bool = Form(...),
+    reason: str | None = Form(None),
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+) -> HTMLResponse:
+    # Create an approval response conversation item
+    try:
+        await client.conversations.items.create(
+            conversation_id=conversation_id,
+            items=[{
+                "type": "mcp_approval_response",
+                "approval_request_id": approval_request_id,
+                "approve": approve,
+                **({"reason": reason} if reason else {})
+            }]
+        )
+    except Exception as e:
+        logger.error(f"Failed to submit MCP approval response: {e}")
+        # Render a minimal error card and allow retry
+        error_html = f"<div class=\"assistantMessage\">Error submitting approval: {str(e)}</div>"
+        return HTMLResponse(content=error_html)
+
+    # After approval decision, start a new stream run by returning a new assistant-run include
+    assistant_run_html = templates.get_template("components/assistant-run.html").render(
+        request=request, conversation_id=conversation_id
+    )
+    # Also append a small acknowledgement step
+    ack_html = templates.get_template("components/assistant-step.html").render(
+        step_type="systemNote",
+        step_id=f"ack-{approval_request_id}",
+        content=("Approved MCP tool request" if approve else "Rejected MCP tool request") + (f": {reason}" if reason else "")
+    )
+    return HTMLResponse(content=(ack_html + assistant_run_html))
