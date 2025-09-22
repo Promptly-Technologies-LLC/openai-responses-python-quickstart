@@ -1,8 +1,2 @@
 <!-- assistant-step.html -->
-<div class="{{ step_type }}" id="step-{{ step_id }}">
-  {% if content_html %}
-    {{ content_html | safe }}
-  {% else %}
-    {{ content if content else "" }}
-  {% endif %}
-</div>
+<div class="{{ step_type }}" id="step-{{ step_id }}">{% if content_html %}{{ content_html | safe }}{% else %}{{ content if content else "" }}{% endif %}</div>

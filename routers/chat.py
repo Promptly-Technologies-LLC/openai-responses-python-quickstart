@@ -192,7 +192,6 @@ async def stream_response(
                                     )
 
                             case ResponseOutputItemAddedEvent():
-                                logger.info(f"ResponseOutputItemAddedEvent: {event}")
                                 # Skip reasoning steps by default (later make this configurable and/or mount a thinking indicator)
                                 if event.item.id and event.item.type in ["message", "output_text"]:
                                     current_item_id = event.item.id
@@ -220,7 +219,6 @@ async def stream_response(
                                     tool_name = event.item.name
                                     # Skip if TOOL_CONFIG.mcp_servers item with same server_label has require_approval set to
                                     # "always", as approval form provides adequate notification to the user of the tool call
-                                    logger.info(f"TOOL_CONFIG.mcp_servers: {TOOL_CONFIG.mcp_servers}")
                                     if any(
                                         server["server_label"] == server_label and server["require_approval"] == "always"
                                         for server in TOOL_CONFIG.mcp_servers
@@ -236,7 +234,6 @@ async def stream_response(
                                     )
                                 # Handle MCP approval requests by rendering an approval UI card
                                 if isinstance(event.item, McpApprovalRequest):
-                                    logger.info(f"MCP approval request: {event.item}")
                                     current_item_id = event.item.id
                                     # Pretty print arguments JSON if possible
                                     pretty_args: str
@@ -411,9 +408,6 @@ async def approve_mcp_tool(
 ) -> HTMLResponse:
     # Create an approval response conversation item
     try:
-        # Debug by getting conversation items and logging approval request
-        items = await client.conversations.items.list(conversation_id=conversation_id)
-        logger.info(f"Conversation items: {items}")
         await client.conversations.items.create(
             conversation_id=conversation_id,
             items=[{
