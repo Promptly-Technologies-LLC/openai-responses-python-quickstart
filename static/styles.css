@@ -456,6 +456,21 @@ pre {
   background-color: #efefef;
 }
 
+/* MCP approval UI spacing */
+.approvalCard { margin: 10px 0; padding: 8px 10px; border-radius: 8px; background: #f7f7f7; }
+.approvalHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.approvalMeta { display: flex; align-items: center; gap: 12px; font-size: 1em; color: #444; }
+.approvalMeta code { font-size: 1em; }
+@media (max-width: 600px) {
+  .approvalHeader { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .approvalMeta { margin-top: 4px; }
+}
+.approvalDetails { margin: 8px 0; }
+.approvalArgs { margin-top: 6px; padding: 8px; background: #fff; border-radius: 6px; border: 1px solid #e2e2e2; }
+.approvalActions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.approvalActions form { display: flex; flex-direction: column; gap: 8px; }
+.approvalActions .buttons { display: inline-flex; gap: 8px; }
+
 .codeMessage {
   padding: 10px 16px;
   background-color: #e9e9e9;

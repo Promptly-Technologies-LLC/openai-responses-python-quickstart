@@ -6,6 +6,7 @@ __pycache__
 *.pyc
 .specstory
 .mypy_cache
+.cursor
 .cursorrules
 .repomix-output.txt
 repomix-output.txt

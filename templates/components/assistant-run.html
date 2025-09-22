@@ -1,8 +1,8 @@
 <!-- assistant-run.html -->
 <div class="assistant-run" hx-target="find .dots" hx-swap="beforebegin" 
      hx-ext="sse"     
-     sse-connect="{{ url_for('stream_response', conversation_id=conversation_id) }}" 
-     sse-swap="messageCreated,toolCallCreated,toolOutput,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted,networkError"
+     sse-connect="{{ url_for('stream_response', conversation_id=conversation_id) }}{% if sse_params %}?{{ sse_params }}{% endif %}" 
+     sse-swap="messageCreated,toolCallCreated,toolOutput,mcpApprovalRequest,imageOutput,fileOutput,textDelta,toolDelta,textReplacement,runCompleted,networkError"
      hx-on:htmx:sse-before-message="handleCustomSseEvents(event)"
      sse-close="endStream"
      hx-on::sse-close="reEnableSendButton()"
