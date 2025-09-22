@@ -22,7 +22,18 @@
       <button type="button" class="button" hx-delete="{{ url_for('delete_mcp_row') }}" hx-target="closest .mcp-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
     </div>
   </div>
-  <input type="hidden" name="mcp_require_approvals" value="never">
+  <div>
+    <label for="mcp-require-approval-{{ index }}">
+      <input
+        type="checkbox"
+        id="mcp-require-approval-{{ index }}"
+        {% if require_approval|default('never') == 'always' %}checked{% endif %}
+        onchange="this.closest('.mcp-row').querySelector('input[name=&quot;mcp_require_approvals&quot;]').value = this.checked ? 'always' : 'never';"
+      >
+      Require approval for tool calls
+    </label>
+  </div>
+  <input type="hidden" name="mcp_require_approvals" value="{% if require_approval|default('never') == 'always' %}always{% else %}never{% endif %}">
 </div>
 
 

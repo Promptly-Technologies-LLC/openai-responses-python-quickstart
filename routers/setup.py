@@ -94,6 +94,18 @@ async def read_setup(
             **({"connector_id": srv["connector_id"]} if "connector_id" in srv else {}),
             **({"authorization": srv["authorization"]} if "authorization" in srv else {}),
         }
+        # Normalize require_approval to a simple string always/never for the UI
+        try:
+            if "require_approval" in srv:
+                ra = srv.get("require_approval")
+                if isinstance(ra, str):
+                    entry["require_approval"] = "always" if ra.lower() == "always" else "never"
+                elif isinstance(ra, dict):
+                    entry["require_approval"] = "always" if "always" in ra else "never"
+            else:
+                entry["require_approval"] = "never"
+        except Exception:
+            entry["require_approval"] = "never"
         if "headers" in srv and isinstance(srv["headers"], dict):
             try:
                 entry["headers_json"] = json.dumps(srv["headers"]) or ""
