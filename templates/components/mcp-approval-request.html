@@ -17,9 +17,11 @@
       hx-post="/chat/{{ conversation_id }}/approve"
       hx-target="#messages"
       hx-swap="beforeend"
-      onsubmit="Array.from(this.querySelectorAll('button')).forEach(b=>{ if(b!==event.submitter){ b.disabled=true }})"
+      hx-sync="this:queue"
+      onsubmit="this.querySelector('input[name=approve]').value = (event.submitter && event.submitter.value) || ''; Array.from(this.querySelectorAll('button')).forEach(b=>{ b.disabled=true })"
     >
       <input type="hidden" name="approval_request_id" value="{{ approval_request.id }}" />
+      <input type="hidden" name="approve" id="approve-{{ approval_request.id }}" />
       <label for="approvalReason-{{ approval_request.id }}">Reason (optional)</label>
       <textarea id="approvalReason-{{ approval_request.id }}" name="reason" rows="2" placeholder="Why approve or reject? (optional)"></textarea>
       <div class="buttons">
