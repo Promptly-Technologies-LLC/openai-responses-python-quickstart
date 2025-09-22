@@ -222,7 +222,7 @@ async def stream_response(
                                     # "always", as approval form provides adequate notification to the user of the tool call
                                     logger.info(f"TOOL_CONFIG.mcp_servers: {TOOL_CONFIG.mcp_servers}")
                                     if any(
-                                        server.server_label == server_label and server.require_approval == "always"
+                                        server["server_label"] == server_label and server["require_approval"] == "always"
                                         for server in TOOL_CONFIG.mcp_servers
                                     ):
                                         continue
@@ -244,6 +244,23 @@ async def stream_response(
                                         pretty_args = json.dumps(json.loads(event.item.arguments), indent=2)
                                     except Exception:
                                         pretty_args = event.item.arguments
+
+                                    # Ensure approval request exists in conversation state with same id
+                                    # (Note: this is a workaround to resolve a Responses API bug by triggering a
+                                    # commit of conversation state on their server; else approval throws error)
+                                    try:
+                                        await client.conversations.items.create(
+                                            conversation_id=conversation_id,
+                                            items=[{
+                                                "type": "mcp_approval_request",
+                                                "id": event.item.id,
+                                                "arguments": event.item.arguments,
+                                                "name": event.item.name,
+                                                "server_label": event.item.server_label,
+                                            }]
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"Failed to add MCP approval request to conversation: {e}")
 
                                     approval_card_html = templates.get_template("components/mcp-approval-request.html").render(
                                         conversation_id=conversation_id,
