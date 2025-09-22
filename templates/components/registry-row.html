@@ -1,7 +1,10 @@
 <div class="registry-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
   <div>
     <label for="fn-{{ index }}">Function Name</label>
-    <input type="text" id="fn-{{ index }}" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off" value="{{ name|default('') }}">
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <input type="text" id="fn-{{ index }}" name="reg_function_names" class="input" placeholder="get_weather" autocomplete="off" value="{{ name|default('') }}">
+      <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
+    </div>
   </div>
   <div>
     <label for="imp-{{ index }}">Import Path</label>
@@ -9,9 +12,6 @@
   </div>
   <div>
     <label for="tpl-{{ index }}">Template Path <span style="opacity:0.7;">(optional)</span></label>
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <input type="text" id="tpl-{{ index }}" name="reg_template_paths" class="input" placeholder="components/weather-widget.html" autocomplete="off" value="{{ template_path|default('') }}">
-      <button type="button" class="button" hx-delete="{{ url_for('delete_registry_row') }}" hx-target="closest .registry-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
-    </div>
+    <input type="text" id="tpl-{{ index }}" name="reg_template_paths" class="input" placeholder="components/weather-widget.html" autocomplete="off" value="{{ template_path|default('') }}">
   </div>
 </div>
