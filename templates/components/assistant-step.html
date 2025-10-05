@@ -1,2 +1,12 @@
 <!-- assistant-step.html -->
+{% if step_type == 'toolCall' %}
+<div class="toolCall collapsible">
+<div class="collapsible__header" data-target="step-{{ step_id }}" aria-expanded="true" role="button" tabindex="0">
+<span class="collapsible__chevron">▼</span>
+<span class="collapsible__title">Tool call</span>
+</div>
+<div class="collapsible__content" id="step-{{ step_id }}">{% if content_html %}{{ content_html | safe }}{% else %}{{ content if content else "" }}{% endif %}</div>
+</div>
+{% else %}
 <div class="{{ step_type }}" id="step-{{ step_id }}">{% if content_html %}{{ content_html | safe }}{% else %}{{ content if content else "" }}{% endif %}</div>
+{% endif %}

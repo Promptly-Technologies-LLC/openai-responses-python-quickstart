@@ -168,6 +168,38 @@ pre {
   white-space: pre-wrap;
 }
 
+/* Collapsible toolCall styles */
+.collapsible {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+  margin: 8px 0;
+}
+.collapsible__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: #374151;
+}
+.collapsible__header:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+.collapsible__chevron {
+  display: inline-block;
+  transition: transform 0.15s ease-in-out;
+}
+.collapsible--collapsed .collapsible__chevron {
+  transform: rotate(-90deg);
+}
+.collapsible__content {
+  padding: 8px 10px;
+}
+
 
 .fileViewer {
   display: flex;
