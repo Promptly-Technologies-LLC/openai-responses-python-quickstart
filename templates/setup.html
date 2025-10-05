@@ -110,34 +110,33 @@
                     {% include 'components/file-viewer.html' %}
                 </div>
               {% endif %}
+              {% if "function" in current_tools or "mcp" in current_tools %}
+                <form action="{{ url_for('save_app_config') }}" method="POST" id="tool-config-form">
+                  <input type="hidden" name="action" value="regenerate_registry">
+              {% endif %}
               {% if "function" in current_tools %}
                 <div class="setupSection" style="margin-top: 20px;">
                   <h3>Register Custom Functions</h3>
                   <p class="setupMessage">Provide function entries to include in <code>tool.config.json</code>. Use module import path for functions and a template path relative to the <code>templates/</code> directory (e.g., <code>components/weather-widget.html</code>). If you paste a path beginning with <code>templates/</code>, it will be normalized automatically.</p>
 
-                  <form action="{{ url_for('save_app_config') }}" method="POST" id="registry-form">
-                    <input type="hidden" name="action" value="regenerate_registry">
-
-                    <div id="registry-rows">
-                      {% if existing_registry_entries %}
-                        {% for entry in existing_registry_entries %}
-                          {% set index = loop.index0 %}
-                          {% set name = entry.name %}
-                          {% set import_path = entry.import_path %}
-                          {% set template_path = entry.template_path %}
-                          {% include 'components/registry-row.html' %}
-                        {% endfor %}
-                      {% else %}
-                        {% set index = 0 %}
+                  <div id="registry-rows" style="align-self: flex-start;">
+                    {% if existing_registry_entries %}
+                      {% for entry in existing_registry_entries %}
+                        {% set index = loop.index0 %}
+                        {% set name = entry.name %}
+                        {% set import_path = entry.import_path %}
+                        {% set template_path = entry.template_path %}
                         {% include 'components/registry-row.html' %}
-                      {% endif %}
-                    </div>
+                      {% endfor %}
+                    {% else %}
+                      {% set index = 0 %}
+                      {% include 'components/registry-row.html' %}
+                    {% endif %}
+                  </div>
 
-                    <div style="display:flex; gap: 10px;">
-                      <button type="button" class="button" hx-get="{{ url_for('new_registry_row') }}" hx-target="#registry-rows" hx-swap="beforeend" hx-include="#registry-rows input[name='reg_function_names'], #registry-rows input[name='reg_import_paths'], #registry-rows input[name='reg_template_paths']">Add Function</button>
-                      <button type="submit" class="button">Regenerate tool.config.json</button>
-                    </div>
-                  </form>
+                  <div style="display:flex; gap: 10px; align-self: flex-start;"">
+                    <button type="button" class="button" hx-get="{{ url_for('new_registry_row') }}" hx-target="#registry-rows" hx-swap="beforeend" hx-include="#registry-rows input[name='reg_function_names'], #registry-rows input[name='reg_import_paths'], #registry-rows input[name='reg_template_paths']">Add Function</button>
+                  </div>
                 </div>
                 
               {% endif %}
@@ -146,34 +145,35 @@
                   <h3>Register MCP Servers</h3>
                   <p class="setupMessage">Add MCP servers to include in <code>tool.config.json</code>. Provide a label and either a server URL or a connector ID.</p>
 
-                  <form action="{{ url_for('save_app_config') }}" method="POST" id="mcp-form">
-                    <input type="hidden" name="action" value="regenerate_registry">
-
-                    <div id="mcp-rows">
-                      {% if existing_mcp_servers %}
-                        {% for srv in existing_mcp_servers %}
-                          {% set index = loop.index0 %}
-                          {% set label = srv.server_label %}
-                          {% set server_url = srv.server_url if 'server_url' in srv else '' %}
-                          {% set connector_id = srv.connector_id if 'connector_id' in srv else '' %}
-                          {% set authorization = srv.authorization if 'authorization' in srv else '' %}
-                          {% set headers_json = srv.headers_json if 'headers_json' in srv else '' %}
-                          {% set require_approval = srv.require_approval if 'require_approval' in srv else 'never' %}
-                          {% include 'components/mcp-row.html' %}
-                        {% endfor %}
-                      {% else %}
-                        {% set index = 0 %}
-                        {% set require_approval = 'never' %}
+                  <div id="mcp-rows" style="align-self: flex-start;">
+                    {% if existing_mcp_servers %}
+                      {% for srv in existing_mcp_servers %}
+                        {% set index = loop.index0 %}
+                        {% set label = srv.server_label %}
+                        {% set server_url = srv.server_url if 'server_url' in srv else '' %}
+                        {% set connector_id = srv.connector_id if 'connector_id' in srv else '' %}
+                        {% set authorization = srv.authorization if 'authorization' in srv else '' %}
+                        {% set headers_json = srv.headers_json if 'headers_json' in srv else '' %}
+                        {% set require_approval = srv.require_approval if 'require_approval' in srv else 'never' %}
                         {% include 'components/mcp-row.html' %}
-                      {% endif %}
-                    </div>
+                      {% endfor %}
+                    {% else %}
+                      {% set index = 0 %}
+                      {% set require_approval = 'never' %}
+                      {% include 'components/mcp-row.html' %}
+                    {% endif %}
+                  </div>
 
-                    <div style="display:flex; gap: 10px;">
-                      <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons'], #mcp-rows input[name='mcp_require_approvals']">Add MCP Server</button>
-                      <button type="submit" class="button">Regenerate tool.config.json</button>
-                    </div>
-                  </form>
+                  <div style="display:flex; gap: 10px; align-self: flex-start;">
+                    <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons'], #mcp-rows input[name='mcp_require_approvals']">Add MCP Server</button>
+                  </div>
                 </div>
+              {% endif %}
+              {% if "function" in current_tools or "mcp" in current_tools %}
+                <div class="centered-button-container">
+                  <button type="submit" class="button">Save tool config</button>
+                </div>
+                </form>
               {% endif %}
           {% endif %}
         </div>
