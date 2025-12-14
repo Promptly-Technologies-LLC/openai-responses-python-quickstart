@@ -146,8 +146,20 @@ class TestFileSearchTool:
         file_input = page.locator('input[type="file"]')
         expect(file_input).to_be_visible()
 
-        upload_button = page.locator('button:has-text("Upload File")')
+        upload_button = page.locator('button:has-text("Upload Files")')
         expect(upload_button).to_be_visible()
+
+    def test_file_input_allows_multiple_selection(
+        self, page: Page, base_url: str, app_server, env_file_search_only
+    ):
+        """File input should allow selecting multiple files at once."""
+        page.goto(f"{base_url}/setup/")
+
+        file_input = page.locator('input[type="file"]')
+        expect(file_input).to_be_visible()
+
+        # The file input should have the 'multiple' attribute
+        expect(file_input).to_have_attribute("multiple", "")
 
     def test_file_search_checkbox_checked(
         self, page: Page, base_url: str, app_server, env_file_search_only

@@ -6,10 +6,10 @@
     hx-swap="outerHTML"
     hx-indicator="#upload-indicator"
     enctype="multipart/form-data">
-  <input type="file" name="file" required>
+  <input type="file" name="files" multiple required>
   <input type="hidden" name="purpose" value="assistants">
   <div class="centered-button-container">
-    <button type="submit" class="button">Upload File</button>
+    <button type="submit" class="button">Upload Files</button>
     <span id="upload-indicator" class="htmx-indicator">Uploading...</span>
   </div>
 </form>
