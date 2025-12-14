@@ -43,72 +43,77 @@ async def list_files(
 @router.post("/", response_class=HTMLResponse)
 async def upload_file(
     request: Request,
-    file: UploadFile = File(...), 
+    files: list[UploadFile] = File(...),
     purpose: Literal["assistants", "vision"] = Form(default="assistants"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> HTMLResponse:
-    """Uploads a file, adds it to the vector store, and returns the updated file list HTML."""
+    """Uploads one or more files, adds them to the vector store, and returns the updated file list HTML."""
     try:
         vector_store_id = await get_or_create_vector_store(client)
     except Exception as e:
         logger.error(f"Error getting or creating vector store: {e}")
         return templates.TemplateResponse(
-            "components/file-list.html", 
+            "components/file-list.html",
             {"request": request, "error_message": "Error getting or creating vector store"}
         )
 
-    error_message = None
-    file_content = None
-    try:
-        # 1. Read the file content first
-        file_content = await file.read()
-        if not file.filename:
-            raise ValueError("File has no filename")
-        if not file_content:
-            raise ValueError("File content is empty")
+    error_messages: list[str] = []
 
-        # 2. Upload the file content to OpenAI
-        openai_file = await client.files.create(
-            file=(file.filename, file_content),
-            purpose=purpose
-        )
-        
-        # 3. Add the uploaded file to the vector store
-        await client.vector_stores.files.create(
-            vector_store_id=vector_store_id,
-            file_id=openai_file.id
-        )
-        logger.info(f"File {file.filename} uploaded to OpenAI and added to vector store.")
-
-        # 4. Store the file locally using the same content
+    for file in files:
+        file_content = None
         try:
-            store_file(file.filename, file_content)
-        except Exception as e:
-            logger.error(f"Error storing file {file.filename} locally: {e}")
-            error_message = "Error storing file locally"
+            # 1. Read the file content first
+            file_content = await file.read()
+            if not file.filename:
+                raise ValueError("File has no filename")
+            if not file_content:
+                raise ValueError("File content is empty")
 
-    except ValueError as ve:
-        logger.error(f"File validation error: {ve}")
-        error_message = str(ve)
-    except Exception as e:
-        logger.error(f"Error uploading file: {e}")
-        error_message = "Error uploading file for assistant"
+            # 2. Upload the file content to OpenAI
+            openai_file = await client.files.create(
+                file=(file.filename, file_content),
+                purpose=purpose
+            )
+
+            # 3. Add the uploaded file to the vector store
+            await client.vector_stores.files.create(
+                vector_store_id=vector_store_id,
+                file_id=openai_file.id
+            )
+            logger.info(f"File {file.filename} uploaded to OpenAI and added to vector store.")
+
+            # 4. Store the file locally using the same content
+            try:
+                store_file(file.filename, file_content)
+            except Exception as e:
+                logger.error(f"Error storing file {file.filename} locally: {e}")
+                error_messages.append(f"Error storing {file.filename} locally")
+
+        except ValueError as ve:
+            logger.error(f"File validation error for {file.filename}: {ve}")
+            error_messages.append(f"{file.filename}: {ve}")
+        except Exception as e:
+            logger.error(f"Error uploading file {file.filename}: {e}")
+            error_messages.append(f"Error uploading {file.filename}")
 
     # Fetch the updated list of files and render the partial
-    files = []
+    file_list = []
     try:
         if vector_store_id:
-            files = await get_files_for_vector_store(vector_store_id, client)
+            file_list = await get_files_for_vector_store(vector_store_id, client)
     except Exception as e:
         logger.error(f"Error fetching files: {e}")
-        error_message = "Error fetching files for assistant"
+        error_messages.append("Error fetching files for assistant")
+
+    # Combine error messages if any
+    error_message = "; ".join(error_messages) if error_messages else None
 
     # Return the response, conditionally including error message
     return templates.TemplateResponse(
-        "components/file-list.html", 
+        "components/file-list.html",
         {
-            "request": request, 
-            "files": files,
+            "request": request,
+            "files": file_list,
             **({"error_message": error_message} if error_message else {})
         }
     )
