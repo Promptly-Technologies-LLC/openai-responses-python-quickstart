@@ -58,6 +58,7 @@ async def upload_file(
         )
 
     error_messages: list[str] = []
+    uploaded_files: list[dict[str, str | None]] = []
 
     for file in files:
         file_content = None
@@ -76,11 +77,20 @@ async def upload_file(
             )
 
             # 3. Add the uploaded file to the vector store
-            await client.vector_stores.files.create(
+            vs_file = await client.vector_stores.files.create(
                 vector_store_id=vector_store_id,
                 file_id=openai_file.id
             )
             logger.info(f"File {file.filename} uploaded to OpenAI and added to vector store.")
+
+            # Track the uploaded file so we can include it in the response
+            # even if the list API hasn't caught up yet
+            uploaded_files.append({
+                "id": openai_file.id,
+                "filename": file.filename,
+                "status": vs_file.status,
+                "last_error": vs_file.last_error.message if vs_file.last_error else None
+            })
 
             # 4. Store the file locally using the same content
             try:
@@ -104,6 +114,12 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error fetching files: {e}")
         error_messages.append("Error fetching files for assistant")
+
+    # Merge uploaded files that may not yet appear in the list API response
+    existing_ids = {f["id"] for f in file_list}
+    for uploaded in uploaded_files:
+        if uploaded["id"] not in existing_ids:
+            file_list.insert(0, uploaded)
 
     # Combine error messages if any
     error_message = "; ".join(error_messages) if error_messages else None
