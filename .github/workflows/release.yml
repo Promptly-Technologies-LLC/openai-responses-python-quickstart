@@ -68,10 +68,11 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.pr_info.outputs.notes }}
         run: |
           gh release create "${{ steps.bump.outputs.tag }}" \
             --title "${{ steps.bump.outputs.tag }}" \
-            --notes "${{ steps.pr_info.outputs.notes }}"
+            --notes "$RELEASE_NOTES"
 
       - name: Commit version bump
         uses: stefanzweifel/git-auto-commit-action@v5
