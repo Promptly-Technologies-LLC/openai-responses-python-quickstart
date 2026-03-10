@@ -194,6 +194,12 @@ pre {
   color: #555;
 }
 
+.toolCallArgs {
+  margin: 0;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
 
 .fileViewer {
   display: flex;

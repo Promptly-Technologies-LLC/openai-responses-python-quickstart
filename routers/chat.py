@@ -1,6 +1,7 @@
 import logging
 import json
 import asyncio
+from html import escape
 from datetime import datetime
 from types import ModuleType
 from typing import AsyncGenerator, Dict, Any, Callable, cast
@@ -321,7 +322,12 @@ async def stream_response(
                                         "toolDelta",
                                         wrap_for_oob_swap(
                                             current_item_id,
-                                            f"<pre>{json.dumps(arguments_json, indent=2)}</pre>",
+                                            (
+                                                '<pre class="toolCallArgs" '
+                                                'data-tool-delta="replace">'
+                                                f'{escape(json.dumps(arguments_json, indent=2))}'
+                                                "</pre>"
+                                            ),
                                         ),
                                     )
 
