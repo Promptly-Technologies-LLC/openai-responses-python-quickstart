@@ -1,10 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh issue view:*)",
-      "Bash(gh issue create:*)",
-      "Bash(gh issue close:*)",
-      "Bash(uv run:*)"
+      "Bash(*)",
+      "Search",
+      "Fetch",
+      "WebFetch",
+      "Find",
+      "Explore",
+      "Edit",
+      "Read",
+      "Write"
     ]
   }
 }
