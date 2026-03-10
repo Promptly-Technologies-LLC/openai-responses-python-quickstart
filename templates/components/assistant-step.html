@@ -1,2 +1,9 @@
 <!-- assistant-step.html -->
+{% if step_type == 'toolCall' %}
+<details class="toolCall" id="step-outer-{{ step_id }}">
+  <summary>{% if content_html %}{{ content_html | safe }}{% else %}{{ content if content else "" }}{% endif %}</summary>
+  <div id="step-{{ step_id }}" class="toolCallDetails"></div>
+</details>
+{% else %}
 <div class="{{ step_type }}" id="step-{{ step_id }}">{% if content_html %}{{ content_html | safe }}{% else %}{{ content if content else "" }}{% endif %}</div>
+{% endif %}
