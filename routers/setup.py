@@ -2,6 +2,7 @@ import logging
 import os
 import json
 from typing import Optional, List
+from itertools import zip_longest
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Form, Request
 from fastapi.responses import RedirectResponse, Response
@@ -224,14 +225,23 @@ async def save_app_config(
 
     try:
         if action == "regenerate_registry":
-            # Align lists by index and drop incomplete rows
-            entries: list[CustomFunction] = []
-            for fn, imp, tpl in zip(reg_function_names, reg_import_paths, reg_template_paths):
-                if fn.strip() and imp.strip():
-                    entries.append(
-                        CustomFunction(name=fn.strip(), import_path=imp.strip(), template_path=(tpl or "").strip())
-                    )
-            # Build MCP servers
+            # Preserve existing entries if no meaningful inputs were submitted
+            # Custom functions
+            has_function_input = any(
+                ((fn or "").strip() or (imp or "").strip() or (tpl or "").strip())
+                for fn, imp, tpl in zip_longest(reg_function_names, reg_import_paths, reg_template_paths, fillvalue="")
+            )
+            if has_function_input:
+                entries: list[CustomFunction] = []
+                for fn, imp, tpl in zip(reg_function_names, reg_import_paths, reg_template_paths):
+                    if fn.strip() and imp.strip():
+                        entries.append(
+                            CustomFunction(name=fn.strip(), import_path=imp.strip(), template_path=(tpl or "").strip())
+                        )
+            else:
+                entries = read_registry_entries()
+
+            # MCP servers
             mcp_servers: list[dict] = []
             # Ensure lists have the same length by padding with empty strings
             max_len = max(
@@ -242,52 +252,66 @@ async def save_app_config(
                 len(mcp_headers_jsons),
                 len(mcp_require_approvals),
             )
+
             def get_or_empty(items: List[str], i: int) -> str:
                 try:
                     return (items[i] or "").strip()
                 except IndexError:
                     return ""
-            for i in range(max_len):
-                label = get_or_empty(mcp_labels, i)
-                server_url = get_or_empty(mcp_server_urls, i)
-                connector_id = get_or_empty(mcp_connector_ids, i)
-                authorization = get_or_empty(mcp_authorizations, i)
-                headers_json = get_or_empty(mcp_headers_jsons, i)
-                req_approval = get_or_empty(mcp_require_approvals, i).lower() or "never"
-                if req_approval not in {"always", "never"}:
-                    req_approval = "never"
-                if not label:
-                    continue
-                # must have either server_url or connector_id
-                if not server_url and not connector_id:
-                    continue
-                entry: dict = {
-                    "type": "mcp",
-                    "server_label": label,
-                    # Submitted from frontend (currently hidden static value)
-                    "require_approval": req_approval,
-                }
-                if server_url:
-                    entry["server_url"] = server_url
-                if connector_id:
-                    entry["connector_id"] = connector_id
-                if authorization:
-                    entry["authorization"] = authorization
-                if headers_json:
-                    try:
-                        headers_obj = json.loads(headers_json)
-                    except json.JSONDecodeError as e:
-                        raise ValueError(f"Invalid headers JSON for MCP server '{label}': {e}")
-                    if not isinstance(headers_obj, dict):
-                        raise ValueError(f"Headers for MCP server '{label}' must be a JSON object")
-                    # Optionally coerce all values to strings
-                    coerced: dict[str, str] = {str(k): str(v) for k, v in headers_obj.items()}
-                    entry["headers"] = coerced
-                mcp_servers.append(entry)
+
+            has_mcp_input = any(
+                get_or_empty(mcp_labels, i)
+                or get_or_empty(mcp_server_urls, i)
+                or get_or_empty(mcp_connector_ids, i)
+                or get_or_empty(mcp_authorizations, i)
+                or get_or_empty(mcp_headers_jsons, i)
+                for i in range(max_len)
+            )
+
+            if has_mcp_input:
+                for i in range(max_len):
+                    label = get_or_empty(mcp_labels, i)
+                    server_url = get_or_empty(mcp_server_urls, i)
+                    connector_id = get_or_empty(mcp_connector_ids, i)
+                    authorization = get_or_empty(mcp_authorizations, i)
+                    headers_json = get_or_empty(mcp_headers_jsons, i)
+                    req_approval = get_or_empty(mcp_require_approvals, i).lower() or "never"
+                    if req_approval not in {"always", "never"}:
+                        req_approval = "never"
+                    if not label:
+                        continue
+                    # must have either server_url or connector_id
+                    if not server_url and not connector_id:
+                        continue
+                    entry: dict = {
+                        "type": "mcp",
+                        "server_label": label,
+                        # Submitted from frontend (currently hidden static value)
+                        "require_approval": req_approval,
+                    }
+                    if server_url:
+                        entry["server_url"] = server_url
+                    if connector_id:
+                        entry["connector_id"] = connector_id
+                    if authorization:
+                        entry["authorization"] = authorization
+                    if headers_json:
+                        try:
+                            headers_obj = json.loads(headers_json)
+                        except json.JSONDecodeError as e:
+                            raise ValueError(f"Invalid headers JSON for MCP server '{label}': {e}")
+                        if not isinstance(headers_obj, dict):
+                            raise ValueError(f"Headers for MCP server '{label}' must be a JSON object")
+                        # Optionally coerce all values to strings
+                        coerced: dict[str, str] = {str(k): str(v) for k, v in headers_obj.items()}
+                        entry["headers"] = coerced
+                    mcp_servers.append(entry)
+            else:
+                mcp_servers = read_mcp_servers()
 
             generate_registry_file(entries, mcp_servers=mcp_servers)
             status = "success"
-            message_text = "tool.config.json regenerated."
+            message_text = "Tool config saved."
         else:
             # Standard app config save
             if model is None or instructions is None:

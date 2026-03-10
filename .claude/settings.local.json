@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Task",
+      "Agent",
+      "Read",
+      "Find",
+      "Explore"
+    ]
+  }
+}

@@ -181,7 +181,6 @@ async def stream_response(
                             case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
                                 tool = event.type.split(".")[1].split("_call")[0]
                                 current_item_id = event.item_id
-                                # Skip if 
                                 yield sse_format(
                                         "toolCallCreated",
                                         templates.get_template('components/assistant-step.html').render(

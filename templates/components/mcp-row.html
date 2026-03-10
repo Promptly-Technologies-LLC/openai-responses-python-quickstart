@@ -1,7 +1,7 @@
 <div class="mcp-row" style="display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; margin-bottom: 16px;">
   <div>
     <label for="mcp-label-{{ index }}">Server Label</label>
-    <div style="display: flex; gap: 8px; align-items: center;">
+    <div style="display: flex; gap: 8px; align-items: start;">
       <input type="text" id="mcp-label-{{ index }}" name="mcp_labels" class="input" placeholder="My Server" autocomplete="off" value="{{ label|default('') }}">
       <button type="button" class="button" hx-delete="{{ url_for('delete_mcp_row') }}" hx-target="closest .mcp-row" hx-swap="outerHTML" aria-label="Remove row">✕</button>
     </div>
