@@ -117,17 +117,16 @@ async def read_setup(
         existing_mcp_servers.append(entry)
 
     return templates.TemplateResponse(
-        "setup.html",
+        request, "setup.html",
         {
-            "request": request,
             "setup_message": setup_message,
-            "status": status, # Pass status from query params
-            "status_message": message_text, # Pass message from query params
+            "status": status,
+            "status_message": message_text,
             "current_tools": current_tools,
             "current_model": current_model,
             "current_instructions": current_instructions,
             "current_show_tool_call_detail": current_show_tool_call_detail,
-            "available_models": available_models, # Pass available models to template
+            "available_models": available_models,
             "existing_registry_entries": read_registry_entries(),
             "existing_mcp_servers": existing_mcp_servers,
         }
@@ -157,8 +156,8 @@ async def new_registry_row(request: Request) -> Response:
         index = 0
 
     return templates.TemplateResponse(
-        "components/registry-row.html",
-        {"request": request, "index": index},
+        request, "components/registry-row.html",
+        {"index": index},
     )
 
 
@@ -192,8 +191,8 @@ async def new_mcp_row(request: Request) -> Response:
         index = 0
 
     return templates.TemplateResponse(
-        "components/mcp-row.html",
-        {"request": request, "index": index},
+        request, "components/mcp-row.html",
+        {"index": index},
     )
 
 

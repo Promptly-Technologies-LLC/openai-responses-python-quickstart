@@ -42,8 +42,9 @@ async def get_files_for_vector_store(vector_store_id: str, client: AsyncOpenAI) 
                     "last_error": vs_file.last_error.message if vs_file.last_error else None # Include error message if failed
                 })
             except Exception as file_retrieve_error:
-                 # If retrieving the base FileObject fails, still list the VS file entry
-                 logger.error(f"Failed to retrieve file object {vs_file.id}: {file_retrieve_error}")
+                 # If retrieving the base FileObject fails, still list the VS file entry.
+                 # This is expected transiently after deletion due to API eventual consistency.
+                 logger.warning(f"Failed to retrieve file object {vs_file.id}: {file_retrieve_error}")
                  files_data.append({
                     "id": vs_file.id,
                     "filename": f"File ID: {vs_file.id} (retrieval failed)",

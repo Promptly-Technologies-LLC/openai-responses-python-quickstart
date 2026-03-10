@@ -137,7 +137,7 @@ class TestFileSearchTool:
         page.goto(f"{base_url}/setup/")
 
         # File upload section should be visible
-        upload_files_heading = page.locator('h3:has-text("Upload Files")')
+        upload_files_heading = page.locator('h3:has-text("File Management")')
         expect(upload_files_heading).to_be_visible()
 
         upload_form = page.locator("#upload-form")
@@ -197,7 +197,7 @@ class TestFunctionTool:
         page.goto(f"{base_url}/setup/")
 
         # Custom functions section should be visible
-        functions_heading = page.locator('h3:has-text("Register Custom Functions")')
+        functions_heading = page.locator('h3:has-text("Custom Functions")')
         expect(functions_heading).to_be_visible()
 
         registry_rows = page.locator("#registry-rows")
@@ -252,7 +252,7 @@ class TestMcpTool:
         page.goto(f"{base_url}/setup/")
 
         # MCP servers section should be visible
-        mcp_heading = page.locator('h3:has-text("Register MCP Servers")')
+        mcp_heading = page.locator('h3:has-text("MCP Servers")')
         expect(mcp_heading).to_be_visible()
 
         mcp_rows = page.locator("#mcp-rows")

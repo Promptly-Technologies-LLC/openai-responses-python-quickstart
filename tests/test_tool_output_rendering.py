@@ -345,7 +345,6 @@ class TestToolDeltaJsHandling:
 # Integration tests: SSE stream for function tool calls
 # ---------------------------------------------------------------------------
 
-@pytest.mark.anyio
 class TestFunctionCallSseIntegration:
     """Integration test: hit the /receive endpoint with a mocked OpenAI client
     and verify SSE events for a function tool call contain correctly structured
@@ -396,6 +395,7 @@ class TestFunctionCallSseIntegration:
 
         return parse_sse_events(raw)
 
+    @pytest.mark.anyio
     async def test_tool_call_created_has_details_with_target_div(self):
         """toolCallCreated SSE event must contain a <details> element with an
         inner div whose id matches the OOB swap target pattern."""
@@ -410,6 +410,7 @@ class TestFunctionCallSseIntegration:
             f"toolCallCreated must contain a div with id='step-{ITEM_ID}' for OOB targeting"
         )
 
+    @pytest.mark.anyio
     async def test_arguments_json_emitted_into_details(self):
         """After function call is complete, the arguments JSON must be emitted
         via a toolDelta event with OOB swap targeting the toolCallDetails div.
@@ -443,6 +444,7 @@ class TestFunctionCallSseIntegration:
         assert 'class="toolCallArgs"' in final_payload
         assert "<pre" in final_payload
 
+    @pytest.mark.anyio
     async def test_tool_output_not_oob_wrapped(self):
         """toolOutput SSE event must NOT contain hx-swap-oob (it goes to default swap target)."""
         events = await self._stream_events()
@@ -456,6 +458,7 @@ class TestFunctionCallSseIntegration:
                 "of <details>, not inside it"
             )
 
+    @pytest.mark.anyio
     async def test_streaming_deltas_when_show_detail_enabled(self):
         """When SHOW_TOOL_CALL_DETAIL=true, streaming argument deltas must be
         emitted as toolDelta events with OOB swap targeting the toolCallDetails div."""
