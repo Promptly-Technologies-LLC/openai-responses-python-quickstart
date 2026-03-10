@@ -51,8 +51,8 @@ templates = Jinja2Templates(directory="templates")
 async def general_exception_handler(request: Request, exc: Exception) -> Response:
     logger.error(f"Unhandled error: {exc}")
     return templates.TemplateResponse(
-        "error.html",
-        {"request": request, "error_message": str(exc)},
+        request, "error.html",
+        {"error_message": str(exc)},
         status_code=500
     )
 
@@ -70,8 +70,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     else:
         # Return the full error page for standard requests
         return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "error_message": f"Invalid input: {error_details}"},
+            request, "error.html",
+            {"error_message": f"Invalid input: {error_details}"},
             status_code=422,
         )
 
@@ -79,8 +79,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
     logger.error(f"HTTP error: {exc.detail}")
     return templates.TemplateResponse(
-        "error.html",
-        {"request": request, "error_message": exc.detail},
+        request, "error.html",
+        {"error_message": exc.detail},
         status_code=exc.status_code
     )
 
@@ -107,9 +107,8 @@ async def read_home(
         conversation_id = await create_conversation()
     
     return templates.TemplateResponse(
-        "index.html",
+        request, "index.html",
         {
-            "request": request,
             "messages": messages,
             "conversation_id": conversation_id
         }

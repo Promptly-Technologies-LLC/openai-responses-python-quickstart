@@ -30,8 +30,8 @@ async def list_files(
         vector_store_id = await get_or_create_vector_store(client)
         files = await get_files_for_vector_store(vector_store_id, client)
         return templates.TemplateResponse(
-            "components/file-list.html", 
-            {"request": request, "files": files}
+            request, "components/file-list.html",
+            {"files": files}
         )
     except Exception as e:
         logger.error(f"Error generating file list HTML: {e}")
@@ -53,8 +53,8 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error getting or creating vector store: {e}")
         return templates.TemplateResponse(
-            "components/file-list.html",
-            {"request": request, "error_message": "Error getting or creating vector store"}
+            request, "components/file-list.html",
+            {"error_message": "Error getting or creating vector store"}
         )
 
     error_messages: list[str] = []
@@ -126,9 +126,8 @@ async def upload_file(
 
     # Return the response, conditionally including error message
     return templates.TemplateResponse(
-        "components/file-list.html",
+        request, "components/file-list.html",
         {
-            "request": request,
             "files": file_list,
             **({"error_message": error_message} if error_message else {})
         }
@@ -202,9 +201,11 @@ async def delete_file(
     try:
         if vector_store_id:
             files = await get_files_for_vector_store(vector_store_id, client)
+            # Filter out the deleted file in case the API hasn't caught up yet
+            files = [f for f in files if f["id"] != file_id]
         elif not error_message:
              error_message = "Could not retrieve vector store information."
-             
+
     except Exception as fetch_error:
         logger.error(f"Error fetching file list after delete attempt: {fetch_error}")
         # If an error message wasn't already set, set one now. Otherwise, keep the original error.
@@ -213,9 +214,8 @@ async def delete_file(
 
     # Return the response, conditionally including error message
     return templates.TemplateResponse(
-        "components/file-list.html",
+        request, "components/file-list.html",
         {
-            "request": request,
             "files": files,
             **({"error_message": error_message} if error_message else {})
         }
