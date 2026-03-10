@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
                     {
                         "name": "get_weather",
                         "import_path": "utils.custom_functions",
-                        "template_path": "utils/custom_functions.py"}
+                        "template_path": "components/weather-widget.html"}
                     ]
                 },
                 indent=4

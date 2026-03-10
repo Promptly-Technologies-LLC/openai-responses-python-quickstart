@@ -316,6 +316,15 @@ async def stream_response(
                                     function_name = event.item.name
                                     arguments_json = json.loads(event.item.arguments)
 
+                                    # Emit complete arguments into the collapsible details
+                                    yield sse_format(
+                                        "toolDelta",
+                                        wrap_for_oob_swap(
+                                            current_item_id,
+                                            f"<pre>{json.dumps(arguments_json, indent=2)}</pre>",
+                                        ),
+                                    )
+
                                     # Dispatch via registry
                                     result: FunctionResult[Any] = await FUNCTION_REGISTRY.call(function_name, arguments_json, context=Context())
 
