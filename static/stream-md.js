@@ -31,6 +31,11 @@ function handleCustomSseEvents(evt) {
 		processTextDelta(originalSSEEvent);
 	}
 
+	if (originalSSEEvent.type === 'toolDelta') {
+		evt.preventDefault();
+		processToolDelta(originalSSEEvent);
+	}
+
 	// Reveal network error banner
 	if (originalSSEEvent.type === 'networkError') {
 		evt.preventDefault();
@@ -63,6 +68,17 @@ function processTextDelta(sseEvent) {
 
 	window._streamingMarkdown.set(targetElement, updatedMarkdown);
 	renderMarkdown(targetElement, updatedMarkdown, markdownChunk); // Pass original chunk for fallback
+}
+
+function processToolDelta(sseEvent) {
+	const oobHTML = sseEvent.data;
+	const { targetElement, payload } = parseOobSwap(oobHTML, "toolDelta");
+
+	if (!targetElement || payload === null) {
+		return;
+	}
+
+	targetElement.textContent += payload;
 }
 
 function processTextReplacement(sseEvent) {
