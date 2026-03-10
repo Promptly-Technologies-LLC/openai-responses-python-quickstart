@@ -34,9 +34,9 @@
               </form>
             </div>
           {% else %}
+              {# ── Model & Instructions ── #}
               <div class="setupSection">
-                <h3>Save App Configuration</h3>
-
+                <h3>Model &amp; Instructions</h3>
                 <form action="{{ url_for('save_app_config') }}" method="POST">
                   <div>
                     <label for="model-select">Select Model:</label>
@@ -47,37 +47,30 @@
                         {% endfor %}
                       {% else %}
                         <option value="" disabled>Could not load models</option>
-                        {# Optionally include a default fallback if loading fails #}
                         {% if current_model %}
                           <option value="{{ current_model }}" selected>{{ current_model }} (current)</option>
                         {% else %}
-                           <option value="gpt-4o" selected>gpt-4o (default)</option> {# Default fallback #}
+                           <option value="gpt-4o" selected>gpt-4o (default)</option>
                         {% endif %}
                       {% endif %}
                     </select>
                   </div>
-                  
-                  <div style="margin-top: 15px;">
+
+                  <div>
                     <label for="instructions-input">System Prompt:</label>
-                    <textarea 
-                      name="instructions" 
-                      id="instructions-input" 
-                      class="input" 
-                      rows="4" 
+                    <textarea
+                      name="instructions"
+                      id="instructions-input"
+                      class="input"
+                      rows="4"
                       placeholder="e.g., You are a helpful assistant."
                       style="width: 100%; resize: none;"
                     >{% if current_instructions %}{{ current_instructions }}{% else %}You are a helpful assistant.{% endif %}</textarea>
                   </div>
 
-                  <div style="margin-top: 15px;">
-                    <label>
-                      <input type="checkbox" name="show_tool_call_detail" value="true" {% if current_show_tool_call_detail %}checked{% endif %}>
-                      Show tool call detail in responses
-                    </label>
-                  </div>
-
-                  <p class="setupMessage" style="margin-top: 15px;">Select tools for your assistant:</p>
-                  <div>
+                  {# ── Tools ── #}
+                  <fieldset class="setupFieldset">
+                    <legend>Tools</legend>
                     <label>
                       <input type="checkbox" name="tool_types" value="code_interpreter" {% if "code_interpreter" in current_tools %}checked{% endif %}>
                       Code Interpreter
@@ -94,29 +87,38 @@
                       <input type="checkbox" name="tool_types" value="mcp" {% if "mcp" in current_tools %}checked{% endif %}>
                       MCP Tools
                     </label>
-                  </div>
+                  </fieldset>
+
+                  {# ── Display ── #}
+                  <fieldset class="setupFieldset">
+                    <legend>Display</legend>
+                    <label>
+                      <input type="checkbox" name="show_tool_call_detail" value="true" {% if current_show_tool_call_detail %}checked{% endif %}>
+                      Show tool call detail in responses
+                    </label>
+                  </fieldset>
+
                   <div class="centered-button-container">
-                    <button 
-                      type="submit"
-                      class="button"
-                    >
-                      Save Configuration
-                    </button>
+                    <button type="submit" class="button">Save Configuration</button>
                   </div>
                 </form>
               </div>
+
+              {# ── File Management ── #}
               {% if "file_search" in current_tools %}
-                <div class="setupSection" style="margin-top: 20px;">
-                    {% include 'components/file-viewer.html' %}
+                <div class="setupSection">
+                  {% include 'components/file-viewer.html' %}
                 </div>
               {% endif %}
+
+              {# ── Custom Functions & MCP Servers ── #}
               {% if "function" in current_tools or "mcp" in current_tools %}
                 <form action="{{ url_for('save_app_config') }}" method="POST" id="tool-config-form">
                   <input type="hidden" name="action" value="regenerate_registry">
               {% endif %}
               {% if "function" in current_tools %}
-                <div class="setupSection" style="margin-top: 20px;">
-                  <h3>Register Custom Functions</h3>
+                <div class="setupSection">
+                  <h3>Custom Functions</h3>
                   <p class="setupMessage">Provide function entries to include in <code>tool.config.json</code>. Use module import path for functions and a template path relative to the <code>templates/</code> directory (e.g., <code>components/weather-widget.html</code>). If you paste a path beginning with <code>templates/</code>, it will be normalized automatically.</p>
 
                   <div id="registry-rows" style="align-self: flex-start;">
@@ -134,15 +136,14 @@
                     {% endif %}
                   </div>
 
-                  <div style="display:flex; gap: 10px; align-self: flex-start;"">
+                  <div style="align-self: flex-start;">
                     <button type="button" class="button" hx-get="{{ url_for('new_registry_row') }}" hx-target="#registry-rows" hx-swap="beforeend" hx-include="#registry-rows input[name='reg_function_names'], #registry-rows input[name='reg_import_paths'], #registry-rows input[name='reg_template_paths']">Add Function</button>
                   </div>
                 </div>
-                
               {% endif %}
               {% if "mcp" in current_tools %}
-                <div class="setupSection" style="margin-top: 20px;">
-                  <h3>Register MCP Servers</h3>
+                <div class="setupSection">
+                  <h3>MCP Servers</h3>
                   <p class="setupMessage">Add MCP servers to include in <code>tool.config.json</code>. Provide a label and either a server URL or a connector ID.</p>
 
                   <div id="mcp-rows" style="align-self: flex-start;">
@@ -164,7 +165,7 @@
                     {% endif %}
                   </div>
 
-                  <div style="display:flex; gap: 10px; align-self: flex-start;">
+                  <div style="align-self: flex-start;">
                     <button type="button" class="button" hx-get="{{ url_for('new_mcp_row') }}" hx-target="#mcp-rows" hx-swap="beforeend" hx-include="#mcp-rows input[name='mcp_labels'], #mcp-rows input[name='mcp_server_urls'], #mcp-rows input[name='mcp_connector_ids'], #mcp-rows input[name='mcp_authorizations'], #mcp-rows textarea[name='mcp_headers_jsons'], #mcp-rows input[name='mcp_require_approvals']">Add MCP Server</button>
                   </div>
                 </div>
