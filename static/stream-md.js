@@ -72,13 +72,27 @@ function processTextDelta(sseEvent) {
 
 function processToolDelta(sseEvent) {
 	const oobHTML = sseEvent.data;
-	const { targetElement, payload } = parseOobSwap(oobHTML, "toolDelta");
+	const { targetElement, payload, oobElement } = parseOobSwap(oobHTML, "toolDelta");
 
-	if (!targetElement || payload === null) {
+	if (!targetElement || payload === null || !oobElement) {
 		return;
 	}
 
-	targetElement.textContent += payload;
+	const replacementNode = oobElement.firstElementChild;
+	if (replacementNode && replacementNode.dataset.toolDelta === 'replace') {
+		targetElement.replaceChildren(replacementNode.cloneNode(true));
+		return;
+	}
+
+	let streamingNode = targetElement.querySelector('[data-tool-delta="stream"]');
+	if (!streamingNode) {
+		streamingNode = document.createElement('pre');
+		streamingNode.className = 'toolCallArgs';
+		streamingNode.dataset.toolDelta = 'stream';
+		targetElement.replaceChildren(streamingNode);
+	}
+
+	streamingNode.textContent += oobElement.textContent || '';
 }
 
 function processTextReplacement(sseEvent) {
@@ -126,7 +140,7 @@ function parseOobSwap(oobHTML, eventTypeForLogging) {
 
 	if (!oobElement || !oobElement.getAttribute || oobElement.nodeType !== Node.ELEMENT_NODE) {
 		console.error(`Could not parse OOB element from ${eventTypeForLogging} SSE data:`, oobHTML);
-		return { targetElement: null, payload: null, markdownChunk: null };
+		return { targetElement: null, payload: null, markdownChunk: null, oobElement: null };
 	}
 
 	const swapOobAttr = oobElement.getAttribute('hx-swap-oob');
@@ -134,7 +148,7 @@ function parseOobSwap(oobHTML, eventTypeForLogging) {
 
 	if (!swapOobAttr) {
 		console.warn(`${eventTypeForLogging} message did not contain hx-swap-oob:`, oobHTML);
-		return { targetElement: null, payload: null, markdownChunk: null };
+		return { targetElement: null, payload: null, markdownChunk: null, oobElement: null };
 	}
 
 	let targetSelector = swapOobAttr;
@@ -146,10 +160,10 @@ function parseOobSwap(oobHTML, eventTypeForLogging) {
 	const targetElement = document.querySelector(targetSelector);
 	if (!targetElement) {
 		console.warn(`Target element for OOB swap not found (${eventTypeForLogging}):`, targetSelector);
-		return { targetElement: null, payload: content, markdownChunk: content }; // Return content for caller to check
+		return { targetElement: null, payload: content, markdownChunk: content, oobElement }; // Return content for caller to check
 	}
 	// Depending on context, content is either markdownChunk or payload
-	return { targetElement, payload: content, markdownChunk: content };
+	return { targetElement, payload: content, markdownChunk: content, oobElement };
 }
 
 // Helper to escape string for use in RegExp

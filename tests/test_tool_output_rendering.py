@@ -325,12 +325,20 @@ class TestToolDeltaJsHandling:
             re.DOTALL,
         ), "stream-md.js must call evt.preventDefault() for toolDelta events"
 
-    def test_tool_delta_content_appended_to_target(self):
+    def test_tool_delta_content_processed_via_dedicated_handler(self):
         assert re.search(
             r"(processToolDelta|parseOobSwap).*toolDelta|toolDelta.*?(processToolDelta|parseOobSwap)",
             self.js_content,
             re.DOTALL,
         ), "stream-md.js must process toolDelta via parseOobSwap or processToolDelta"
+
+    def test_tool_delta_streaming_uses_pre_node(self):
+        assert 'data-tool-delta="stream"' in self.js_content
+        assert "document.createElement('pre')" in self.js_content
+
+    def test_tool_delta_final_replaces_streaming_content(self):
+        assert "dataset.toolDelta === 'replace'" in self.js_content
+        assert "replaceChildren(replacementNode.cloneNode(true))" in self.js_content
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +434,14 @@ class TestFunctionCallSseIntegration:
             f"No toolDelta event found targeting #step-{ITEM_ID} with arguments "
             f"containing 'Albany'. Got toolDeltas: {tool_deltas}"
         )
+
+        final_payload = next(
+            (td["data"] for td in tool_deltas if 'data-tool-delta="replace"' in td["data"]),
+            None,
+        )
+        assert final_payload is not None, "Expected a final replacement payload for tool arguments"
+        assert 'class="toolCallArgs"' in final_payload
+        assert "<pre" in final_payload
 
     async def test_tool_output_not_oob_wrapped(self):
         """toolOutput SSE event must NOT contain hx-swap-oob (it goes to default swap target)."""
