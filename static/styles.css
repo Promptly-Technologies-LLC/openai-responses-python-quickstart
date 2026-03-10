@@ -166,6 +166,32 @@ pre {
 
 .toolCall {
   white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.toolCall summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolCall summary::before {
+  content: "▶";
+  font-size: 0.65em;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toolCall[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.toolCallDetails {
+  white-space: pre-wrap;
+  margin-top: 6px;
+  font-size: 0.9em;
+  color: #555;
 }
 
 
