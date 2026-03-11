@@ -14,8 +14,14 @@ dependencies = [
     "uvicorn>=0.32.0",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "live: tests that hit the real OpenAI API (require valid OPENAI_API_KEY)",
+]
+
 [dependency-groups]
 dev = [
     "pytest-playwright>=0.7.2",
+    "ruff>=0.15.5",
     "ty>=0.0.1a21",
 ]

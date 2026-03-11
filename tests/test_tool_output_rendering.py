@@ -6,11 +6,13 @@ Tests for tool output rendering:
 4. Tool call arguments are emitted into the collapsible <details> via OOB swap
 5. JavaScript handles toolDelta events for proper OOB insertion
 6. Integration: SSE stream emits correct events for function tool calls
+7. Web search tool: builds correct tool payload from env config
+8. Web search tool: SSE stream emits correct events for web search calls
+9. Web search tool: url_citation annotations rendered as links
 """
 
 import json
 import re
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,15 +25,18 @@ from openai.types.responses import (
     ResponseFunctionCallArgumentsDoneEvent,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
+    ResponseOutputTextAnnotationAddedEvent,
+    ResponseTextDeltaEvent,
     ResponseFunctionToolCall,
+    ResponseWebSearchCallCompletedEvent,
+    ResponseWebSearchCallInProgressEvent,
+    ResponseWebSearchCallSearchingEvent,
 )
 
+from conftest import PROJECT_ROOT, parse_sse_events, _dotenv
 from utils.config import ToolConfig
 from utils.sse import sse_format
 from routers.chat import wrap_for_oob_swap
-
-
-PROJECT_ROOT = Path(__file__).parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
 
@@ -44,28 +49,6 @@ ARGUMENTS_JSON = '{"location": "Albany"}'
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def parse_sse_events(raw: str) -> list[dict[str, str]]:
-    """Parse raw SSE text into a list of {event, data} dicts."""
-    events = []
-    current_event = None
-    current_data_lines: list[str] = []
-
-    for line in raw.split("\n"):
-        if line.startswith("event: "):
-            current_event = line[len("event: "):]
-        elif line.startswith("data: "):
-            current_data_lines.append(line[len("data: "):])
-        elif line == "" and current_event is not None:
-            events.append({
-                "event": current_event,
-                "data": "\n".join(current_data_lines),
-            })
-            current_event = None
-            current_data_lines = []
-
-    return events
-
 
 class MockAsyncStream:
     """Mock for OpenAI's async streaming response."""
@@ -365,19 +348,7 @@ class TestFunctionCallSseIntegration:
 
         mock_client = build_mock_openai_client()
 
-        try:
-            with open(PROJECT_ROOT / ".env") as f:
-                original_env = f.read()
-        except FileNotFoundError:
-            original_env = None
-
-        # Write test env
-        (PROJECT_ROOT / ".env").write_text(
-            "\n".join(f"{k}={v}" for k, v in env_defaults.items()) + "\n"
-        )
-
-        try:
-            # Patch AsyncOpenAI constructor so Depends(lambda: AsyncOpenAI()) returns our mock
+        with _dotenv(env_defaults, set_fake_api_key=False):
             with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
                 transport = ASGITransport(app=app)
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -386,12 +357,6 @@ class TestFunctionCallSseIntegration:
                         timeout=10.0,
                     )
                     raw = response.text
-        finally:
-            # Restore env
-            if original_env is not None:
-                (PROJECT_ROOT / ".env").write_text(original_env)
-            else:
-                (PROJECT_ROOT / ".env").unlink(missing_ok=True)
 
         return parse_sse_events(raw)
 
@@ -475,3 +440,238 @@ class TestFunctionCallSseIntegration:
             assert f"#step-{ITEM_ID}" in td["data"], (
                 f"toolDelta must target #step-{ITEM_ID}, got: {td['data'][:100]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Web Search tool tests
+# ---------------------------------------------------------------------------
+
+WS_ITEM_ID = "ws_test_abc123"
+WS_RESPONSE_ID = "resp_ws_test_xyz789"
+
+
+def make_web_search_stream() -> MockAsyncStream:
+    """Create a mock stream that emits a web search call followed by a text message."""
+    resp_mock = MagicMock()
+    resp_mock.id = WS_RESPONSE_ID
+
+    # Web search call output item
+    ws_item = MagicMock()
+    ws_item.id = WS_ITEM_ID
+    ws_item.type = "web_search_call"
+
+    # Message output item
+    msg_item = MagicMock()
+    msg_item.id = "msg_test_123"
+    msg_item.type = "message"
+
+    return MockAsyncStream([
+        ResponseCreatedEvent.model_construct(
+            type="response.created", response=resp_mock, sequence_number=0,
+        ),
+        ResponseWebSearchCallInProgressEvent.model_construct(
+            type="response.web_search_call.in_progress",
+            item_id=WS_ITEM_ID, output_index=0, sequence_number=1,
+        ),
+        ResponseWebSearchCallSearchingEvent.model_construct(
+            type="response.web_search_call.searching",
+            item_id=WS_ITEM_ID, output_index=0, sequence_number=2,
+        ),
+        ResponseWebSearchCallCompletedEvent.model_construct(
+            type="response.web_search_call.completed",
+            item_id=WS_ITEM_ID, output_index=0, sequence_number=3,
+        ),
+        ResponseOutputItemAddedEvent.model_construct(
+            type="response.output_item.added", item=msg_item,
+            output_index=1, sequence_number=4,
+        ),
+        ResponseTextDeltaEvent.model_construct(
+            type="response.text.delta",
+            delta="Here are the results",
+            item_id="msg_test_123", output_index=1,
+            content_index=0, sequence_number=5,
+        ),
+        ResponseOutputTextAnnotationAddedEvent.model_construct(
+            type="response.output_text.annotation.added",
+            annotation={
+                "type": "url_citation",
+                "url": "https://example.com/article",
+                "title": "Example Article",
+                "start_index": 0,
+                "end_index": 20,
+            },
+            annotation_index=0,
+            item_id="msg_test_123", output_index=1,
+            content_index=0, sequence_number=6,
+        ),
+        ResponseCompletedEvent.model_construct(
+            type="response.completed", response=resp_mock, sequence_number=7,
+        ),
+    ])
+
+
+def build_web_search_mock_client() -> AsyncMock:
+    """Build a mocked AsyncOpenAI client for web search tests."""
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(return_value=make_web_search_stream())
+    mock_client.conversations.items.list = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock()
+    return mock_client
+
+
+class TestWebSearchToolPayload:
+    """Verify that the web search tool payload is correctly built from env config."""
+
+    async def _get_create_call_args(self, env_overrides: dict) -> dict:
+        """Helper: stream /receive with mocked client and return the kwargs passed to responses.create."""
+        from main import app
+
+        env_defaults = {
+            "OPENAI_API_KEY": "sk-fake-key",
+            "RESPONSES_MODEL": "gpt-4o",
+            "RESPONSES_INSTRUCTIONS": "Test",
+            "ENABLED_TOOLS": "web_search",
+            "SHOW_TOOL_CALL_DETAIL": "false",
+            "WEB_SEARCH_CONTEXT_SIZE": "medium",
+            "WEB_SEARCH_LOCATION_COUNTRY": "",
+            "WEB_SEARCH_LOCATION_CITY": "",
+            "WEB_SEARCH_LOCATION_REGION": "",
+            "WEB_SEARCH_LOCATION_TIMEZONE": "",
+        }
+        env_defaults.update(env_overrides)
+
+        mock_client = build_web_search_mock_client()
+
+        with _dotenv(env_defaults, set_fake_api_key=False):
+            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    await client.get("/chat/conv_test123/receive", timeout=10.0)
+
+        return mock_client.responses.create.call_args.kwargs
+
+    @pytest.mark.anyio
+    async def test_web_search_tool_in_tools_list(self):
+        """When ENABLED_TOOLS includes web_search, tools list must contain a web_search_preview entry."""
+        kwargs = await self._get_create_call_args({})
+        tools = kwargs.get("tools", [])
+        ws_tools = [t for t in tools if isinstance(t, dict) and t.get("type") == "web_search_preview"]
+        assert len(ws_tools) == 1, f"Expected one web_search_preview tool, got {ws_tools}"
+
+    @pytest.mark.anyio
+    async def test_web_search_default_context_size(self):
+        """Default context size should be medium."""
+        kwargs = await self._get_create_call_args({})
+        tools = kwargs.get("tools", [])
+        ws_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "web_search_preview")
+        assert ws_tool.get("search_context_size", "medium") == "medium"
+
+    @pytest.mark.anyio
+    async def test_web_search_custom_context_size(self):
+        """Custom context size should be passed through."""
+        kwargs = await self._get_create_call_args({"WEB_SEARCH_CONTEXT_SIZE": "high"})
+        tools = kwargs.get("tools", [])
+        ws_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "web_search_preview")
+        assert ws_tool["search_context_size"] == "high"
+
+    @pytest.mark.anyio
+    async def test_web_search_with_location(self):
+        """When location env vars are set, user_location should be included."""
+        kwargs = await self._get_create_call_args({
+            "WEB_SEARCH_LOCATION_COUNTRY": "US",
+            "WEB_SEARCH_LOCATION_CITY": "New York",
+            "WEB_SEARCH_LOCATION_REGION": "New York",
+            "WEB_SEARCH_LOCATION_TIMEZONE": "America/New_York",
+        })
+        tools = kwargs.get("tools", [])
+        ws_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "web_search_preview")
+        loc = ws_tool.get("user_location")
+        assert loc is not None, "user_location should be present when location env vars are set"
+        assert loc["type"] == "approximate"
+        assert loc["country"] == "US"
+        assert loc["city"] == "New York"
+        assert loc["region"] == "New York"
+        assert loc["timezone"] == "America/New_York"
+
+    @pytest.mark.anyio
+    async def test_web_search_no_location_when_empty(self):
+        """When no location env vars are set, user_location should not be included."""
+        kwargs = await self._get_create_call_args({
+            "WEB_SEARCH_LOCATION_COUNTRY": "",
+            "WEB_SEARCH_LOCATION_CITY": "",
+            "WEB_SEARCH_LOCATION_REGION": "",
+            "WEB_SEARCH_LOCATION_TIMEZONE": "",
+        })
+        tools = kwargs.get("tools", [])
+        ws_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "web_search_preview")
+        assert "user_location" not in ws_tool, "user_location should not be present when no location env vars are set"
+
+
+class TestWebSearchSseIntegration:
+    """Integration test: verify SSE events for a web search call."""
+
+    async def _stream_events(self, env_overrides: dict | None = None) -> list[dict[str, str]]:
+        """Helper: stream /receive with web search mock and return parsed SSE events."""
+        from main import app
+
+        env_defaults = {
+            "OPENAI_API_KEY": "sk-fake-key",
+            "RESPONSES_MODEL": "gpt-4o",
+            "RESPONSES_INSTRUCTIONS": "Test",
+            "ENABLED_TOOLS": "web_search",
+            "SHOW_TOOL_CALL_DETAIL": "false",
+            "WEB_SEARCH_CONTEXT_SIZE": "medium",
+            "WEB_SEARCH_LOCATION_COUNTRY": "",
+            "WEB_SEARCH_LOCATION_CITY": "",
+            "WEB_SEARCH_LOCATION_REGION": "",
+            "WEB_SEARCH_LOCATION_TIMEZONE": "",
+        }
+        env_defaults.update(env_overrides or {})
+
+        mock_client = build_web_search_mock_client()
+
+        with _dotenv(env_defaults, set_fake_api_key=False):
+            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                    raw = response.text
+
+        return parse_sse_events(raw)
+
+    @pytest.mark.anyio
+    async def test_web_search_emits_tool_call_created(self):
+        """Web search searching event should emit a toolCallCreated SSE event."""
+        events = await self._stream_events()
+        tool_calls = [e for e in events if e["event"] == "toolCallCreated"]
+        assert len(tool_calls) >= 1, f"Expected toolCallCreated event, got events: {[e['event'] for e in events]}"
+        assert "web_search" in tool_calls[0]["data"].lower() or "web search" in tool_calls[0]["data"].lower()
+
+    @pytest.mark.anyio
+    async def test_web_search_does_not_crash_stream(self):
+        """Web search events should not cause unhandled event errors; stream should complete."""
+        events = await self._stream_events()
+        event_types = [e["event"] for e in events]
+        assert "endStream" in event_types, f"Stream should complete. Got: {event_types}"
+        assert "networkError" not in event_types, f"No network errors expected. Got: {event_types}"
+
+    @pytest.mark.anyio
+    async def test_web_search_text_message_rendered(self):
+        """The text message after web search should be rendered via messageCreated + textDelta."""
+        events = await self._stream_events()
+        msg_created = [e for e in events if e["event"] == "messageCreated"]
+        assert len(msg_created) >= 1, "Expected a messageCreated event for the text response"
+        text_deltas = [e for e in events if e["event"] == "textDelta"]
+        assert len(text_deltas) >= 1, "Expected textDelta events with search results text"
+        assert any("results" in td["data"] for td in text_deltas)
+
+    @pytest.mark.anyio
+    async def test_url_citation_rendered_as_link(self):
+        """url_citation annotations should be emitted as clickable links."""
+        events = await self._stream_events()
+        text_deltas = [e for e in events if e["event"] == "textDelta"]
+        # Find the citation event
+        citation_data = " ".join(td["data"] for td in text_deltas)
+        assert "https://example.com/article" in citation_data, (
+            f"Expected url_citation link in textDelta events. Got: {citation_data[:300]}"
+        )

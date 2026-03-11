@@ -87,6 +87,10 @@
                       <input type="checkbox" name="tool_types" value="mcp" {% if "mcp" in current_tools %}checked{% endif %}>
                       MCP Tools
                     </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="web_search" {% if "web_search" in current_tools %}checked{% endif %}>
+                      Web Search
+                    </label>
                   </fieldset>
 
                   {# ── Display ── #}
@@ -108,6 +112,50 @@
               {% if "file_search" in current_tools %}
                 <div class="setupSection">
                   {% include 'components/file-viewer.html' %}
+                </div>
+              {% endif %}
+
+              {# ── Web Search Configuration ── #}
+              {% if "web_search" in current_tools %}
+                <div class="setupSection">
+                  <h3>Web Search</h3>
+                  <p class="setupMessage">Configure web search context size and optional location for localized results.</p>
+                  <form action="{{ url_for('save_app_config') }}" method="POST">
+                    <input type="hidden" name="action" value="save_web_search_config">
+
+                    <div>
+                      <label for="web-search-context-size">Search Context Size:</label>
+                      <select name="web_search_context_size" id="web-search-context-size" class="input">
+                        <option value="low" {% if web_search_context_size == "low" %}selected{% endif %}>Low (fast, lower cost)</option>
+                        <option value="medium" {% if web_search_context_size != "low" and web_search_context_size != "high" %}selected{% endif %}>Medium (default)</option>
+                        <option value="high" {% if web_search_context_size == "high" %}selected{% endif %}>High (comprehensive, higher cost)</option>
+                      </select>
+                    </div>
+
+                    <fieldset class="setupFieldset">
+                      <legend>User Location (optional)</legend>
+                      <div>
+                        <label for="web-search-country">Country (ISO 3166-1 code):</label>
+                        <input type="text" name="web_search_country" id="web-search-country" class="input" placeholder="e.g., US" maxlength="2" value="{{ web_search_country or '' }}">
+                      </div>
+                      <div>
+                        <label for="web-search-city">City:</label>
+                        <input type="text" name="web_search_city" id="web-search-city" class="input" placeholder="e.g., New York" value="{{ web_search_city or '' }}">
+                      </div>
+                      <div>
+                        <label for="web-search-region">Region / State:</label>
+                        <input type="text" name="web_search_region" id="web-search-region" class="input" placeholder="e.g., New York" value="{{ web_search_region or '' }}">
+                      </div>
+                      <div>
+                        <label for="web-search-timezone">Timezone (IANA):</label>
+                        <input type="text" name="web_search_timezone" id="web-search-timezone" class="input" placeholder="e.g., America/New_York" value="{{ web_search_timezone or '' }}">
+                      </div>
+                    </fieldset>
+
+                    <div class="centered-button-container">
+                      <button type="submit" class="button">Save web search config</button>
+                    </div>
+                  </form>
                 </div>
               {% endif %}
 
