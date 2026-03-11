@@ -24,33 +24,51 @@
             {% endfor %}
           </div>
           <form id="chatForm" class="inputForm clearfix"
-                hx-on::after-request="this.reset()"
-                hx-on::before-request="removeNetworkError(); disableSendButton()">
-            <textarea
-              class="input"
-              name="userInput"
-              placeholder="Enter your question"
-              id="userInput"
-              autocomplete="off"
-              rows="1" {# Start with one row, will expand with CSS #}
-              oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
-              hx-on:keydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.querySelector('button[type=submit]').click(); }"
-              required
-            ></textarea>
-            <button
-              id="sendButton"
-              type="submit"
-              class="button"
-              hx-post="/chat/{{ conversation_id }}/send"
-              hx-target="#messages"
-              hx-swap="beforeend"
-              {% if inputDisabled %}disabled{% endif %}
-            >
-              <span class="button__text">Send</span>
-              <span class="button__loader" style="display: none;">
-                <span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>
-              </span>
-            </button>
+                hx-on::after-request="this.reset(); clearImagePreview();"
+                hx-on::before-request="removeNetworkError(); disableSendButton()"
+                hx-encoding="multipart/form-data">
+            <div id="imagePreview" class="imagePreview" style="display:none;">
+              <img id="imagePreviewImg" src="" alt="Preview" />
+              <button type="button" class="imagePreviewRemove" onclick="clearImagePreview()">&times;</button>
+            </div>
+            <div class="inputRow">
+              <label class="imageUploadLabel" title="Attach image">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <input
+                  type="file"
+                  name="image"
+                  id="imageInput"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  class="imageUploadInput"
+                  onchange="previewImage(this)"
+                />
+              </label>
+              <textarea
+                class="input"
+                name="userInput"
+                placeholder="Enter your question"
+                id="userInput"
+                autocomplete="off"
+                rows="1" {# Start with one row, will expand with CSS #}
+                oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"
+                hx-on:keydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.querySelector('button[type=submit]').click(); }"
+                required
+              ></textarea>
+              <button
+                id="sendButton"
+                type="submit"
+                class="button"
+                hx-post="/chat/{{ conversation_id }}/send"
+                hx-target="#messages"
+                hx-swap="beforeend"
+                {% if inputDisabled %}disabled{% endif %}
+              >
+                <span class="button__text">Send</span>
+                <span class="button__loader" style="display: none;">
+                  <span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>
+                </span>
+              </button>
+            </div>
           </form>
         </div>
 {% endblock %}

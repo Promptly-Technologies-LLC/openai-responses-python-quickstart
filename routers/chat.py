@@ -7,7 +7,7 @@ from types import ModuleType
 from typing import AsyncGenerator, Dict, Any, Callable, cast
 from pydantic import ValidationError
 from fastapi.templating import Jinja2Templates
-from fastapi import APIRouter, Form, Depends, Request
+from fastapi import APIRouter, Form, Depends, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, HTMLResponse
 from openai.types.responses import (
     ResponseCreatedEvent, ResponseOutputItemAddedEvent,
@@ -57,23 +57,42 @@ async def send_message(
     request: Request,
     conversation_id: str,
     userInput: str = Form(...),
+    image: UploadFile | None = File(None),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> HTMLResponse:
+    # Build multimodal content array
+    content: list[dict[str, str]] = [{
+        "type": "input_text",
+        "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
+    }]
+
+    # If an image was uploaded, send it to OpenAI and add to content
+    image_file_id: str | None = None
+    if image and image.filename and image.size:
+        image_bytes = await image.read()
+        if image_bytes:
+            openai_file = await client.files.create(
+                file=(image.filename, image_bytes),
+                purpose="vision"
+            )
+            image_file_id = openai_file.id
+            content.append({
+                "type": "input_image",
+                "file_id": image_file_id,
+            })
+
     # Create a new conversation item for the user's message
     await client.conversations.items.create(
         conversation_id=conversation_id,
         items=[{
             "type": "message",
             "role": "user",
-            "content": [{
-                "type": "input_text",
-                "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
-            }]
+            "content": content
         }]
     )
 
     user_message_html = templates.get_template("components/user-message.html").render(
-        request=request, user_input=userInput
+        request=request, user_input=userInput, image_file_id=image_file_id
     )
     assistant_run_html = templates.get_template("components/assistant-run.html").render(
         request=request, conversation_id=conversation_id

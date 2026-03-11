@@ -259,3 +259,26 @@ window.removeNetworkError = function() {
         console.warn('removeNetworkError failed:', e);
     }
 };
+
+// Image upload preview helpers
+window.previewImage = function(input) {
+    const preview = document.getElementById('imagePreview');
+    const previewImg = document.getElementById('imagePreviewImg');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            preview.style.display = 'flex';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+};
+
+window.clearImagePreview = function() {
+    const preview = document.getElementById('imagePreview');
+    const previewImg = document.getElementById('imagePreviewImg');
+    const imageInput = document.getElementById('imageInput');
+    if (preview) preview.style.display = 'none';
+    if (previewImg) previewImg.src = '';
+    if (imageInput) imageInput.value = '';
+};

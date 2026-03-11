@@ -407,11 +407,81 @@ pre {
 
 .inputForm {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   width: 100%;
   padding: 10px;
   padding-bottom: 40px;
   order: 1;
+}
+
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+}
+
+/* Image upload button */
+.imageUploadLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: calc(1em + 32px + 4px);
+  cursor: pointer;
+  color: #666;
+  flex-shrink: 0;
+  border-radius: 50%;
+  transition: color 0.2s;
+}
+
+.imageUploadLabel:hover {
+  color: #000;
+}
+
+.imageUploadInput {
+  display: none;
+}
+
+/* Image preview above the input row */
+.imagePreview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.imagePreview img {
+  max-height: 80px;
+  max-width: 120px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.imagePreviewRemove {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  color: #999;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.imagePreviewRemove:hover {
+  color: #333;
+}
+
+/* Thumbnail in user messages */
+.userImageThumb {
+  max-height: 120px;
+  max-width: 200px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  display: block;
 }
 
 .input {
