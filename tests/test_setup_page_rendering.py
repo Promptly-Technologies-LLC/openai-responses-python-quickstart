@@ -390,6 +390,105 @@ class TestFunctionAndMcp:
         expect(upload_form).not_to_be_visible()
 
 
+class TestWebSearchTool:
+    """Tests for web_search tool conditional rendering."""
+
+    def test_web_search_checkbox_visible(
+        self, page: Page, base_url: str, app_server, env_api_key_no_tools
+    ):
+        """Web search checkbox should be visible in the tools fieldset."""
+        page.goto(f"{base_url}/setup/")
+
+        web_search_cb = page.locator('input[value="web_search"]')
+        expect(web_search_cb).to_be_visible()
+
+    def test_web_search_checkbox_checked_when_enabled(
+        self, page: Page, base_url: str, app_server, env_web_search_only
+    ):
+        """The web_search checkbox should be checked when enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        web_search_cb = page.locator('input[value="web_search"]')
+        expect(web_search_cb).to_be_checked()
+
+    def test_shows_web_search_config_section(
+        self, page: Page, base_url: str, app_server, env_web_search_only
+    ):
+        """When web_search is enabled, the config section should be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        heading = page.locator('h3:has-text("Web Search")')
+        expect(heading).to_be_visible()
+
+        context_size = page.locator("#web-search-context-size")
+        expect(context_size).to_be_visible()
+
+    def test_shows_location_fields(
+        self, page: Page, base_url: str, app_server, env_web_search_only
+    ):
+        """When web_search is enabled, location fields should be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        country = page.locator('input[name="web_search_country"]')
+        expect(country).to_be_visible()
+
+        city = page.locator('input[name="web_search_city"]')
+        expect(city).to_be_visible()
+
+        region = page.locator('input[name="web_search_region"]')
+        expect(region).to_be_visible()
+
+        timezone = page.locator('input[name="web_search_timezone"]')
+        expect(timezone).to_be_visible()
+
+    def test_hides_web_search_config_when_not_enabled(
+        self, page: Page, base_url: str, app_server, env_api_key_no_tools
+    ):
+        """Web search config section should NOT be visible when not enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        context_size = page.locator("#web-search-context-size")
+        expect(context_size).not_to_be_visible()
+
+    def test_populates_saved_config_values(
+        self, page: Page, base_url: str, app_server, env_web_search_with_config
+    ):
+        """Saved web search config values should be populated in the form."""
+        page.goto(f"{base_url}/setup/")
+
+        # Context size should be "high"
+        context_size = page.locator("#web-search-context-size")
+        expect(context_size).to_have_value("high")
+
+        # Location fields should be populated
+        country = page.locator('input[name="web_search_country"]')
+        expect(country).to_have_value("US")
+
+        city = page.locator('input[name="web_search_city"]')
+        expect(city).to_have_value("New York")
+
+        region = page.locator('input[name="web_search_region"]')
+        expect(region).to_have_value("New York")
+
+        timezone = page.locator('input[name="web_search_timezone"]')
+        expect(timezone).to_have_value("America/New_York")
+
+    def test_no_other_tool_sections(
+        self, page: Page, base_url: str, app_server, env_web_search_only
+    ):
+        """File search, function, and MCP sections should NOT be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        upload_form = page.locator("#upload-form")
+        expect(upload_form).not_to_be_visible()
+
+        registry_rows = page.locator("#registry-rows")
+        expect(registry_rows).not_to_be_visible()
+
+        mcp_rows = page.locator("#mcp-rows")
+        expect(mcp_rows).not_to_be_visible()
+
+
 class TestAllToolsEnabled:
     """Tests for when all three conditional tools are enabled."""
 
@@ -415,10 +514,19 @@ class TestAllToolsEnabled:
         save_tool_config = page.locator('button:has-text("Save tool config")')
         expect(save_tool_config).to_be_visible()
 
+    def test_shows_web_search_config(
+        self, page: Page, base_url: str, app_server, env_all_tools
+    ):
+        """Web search config section should be visible when all tools enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        context_size = page.locator("#web-search-context-size")
+        expect(context_size).to_be_visible()
+
     def test_all_tool_checkboxes_checked(
         self, page: Page, base_url: str, app_server, env_all_tools
     ):
-        """All three tool checkboxes should be checked."""
+        """All tool checkboxes should be checked."""
         page.goto(f"{base_url}/setup/")
 
         file_search_cb = page.locator('input[value="file_search"]')
@@ -429,3 +537,6 @@ class TestAllToolsEnabled:
 
         mcp_cb = page.locator('input[value="mcp"]')
         expect(mcp_cb).to_be_checked()
+
+        web_search_cb = page.locator('input[value="web_search"]')
+        expect(web_search_cb).to_be_checked()

@@ -22,7 +22,9 @@ from openai.types.responses import (
     ResponseCodeInterpreterCallCompletedEvent, ResponseMcpListToolsInProgressEvent,
     ResponseMcpListToolsFailedEvent, ResponseMcpListToolsCompletedEvent,
     ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
-    ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent
+    ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent,
+    ResponseWebSearchCallInProgressEvent, ResponseWebSearchCallSearchingEvent,
+    ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.response_output_item import McpApprovalRequest
 from openai.types.responses import ResponseFunctionToolCall
@@ -135,6 +137,28 @@ async def stream_response(
                 tools.extend(tool_defs)
             if "mcp" in enabled_tools:
                 tools.extend(TOOL_CONFIG.mcp_servers)
+        if "web_search" in enabled_tools:
+            ws_tool: Dict[str, Any] = {"type": "web_search_preview"}
+            ctx_size = os.getenv("WEB_SEARCH_CONTEXT_SIZE", "medium").strip()
+            if ctx_size in {"low", "medium", "high"}:
+                ws_tool["search_context_size"] = ctx_size
+            # Build user_location only if at least one field is set
+            country = os.getenv("WEB_SEARCH_LOCATION_COUNTRY", "").strip()
+            city = os.getenv("WEB_SEARCH_LOCATION_CITY", "").strip()
+            region = os.getenv("WEB_SEARCH_LOCATION_REGION", "").strip()
+            timezone = os.getenv("WEB_SEARCH_LOCATION_TIMEZONE", "").strip()
+            if any([country, city, region, timezone]):
+                loc: Dict[str, str] = {"type": "approximate"}
+                if country:
+                    loc["country"] = country
+                if city:
+                    loc["city"] = city
+                if region:
+                    loc["region"] = region
+                if timezone:
+                    loc["timezone"] = timezone
+                ws_tool["user_location"] = loc
+            tools.append(ws_tool)
 
         stream = await client.responses.create(
             input="",
@@ -170,7 +194,9 @@ async def stream_response(
                                 ResponseMcpCallArgumentsDoneEvent() | \
                                 ResponseMcpCallCompletedEvent() | \
                                 ResponseMcpCallInProgressEvent() | \
-                                ResponseFunctionCallArgumentsDoneEvent():
+                                ResponseFunctionCallArgumentsDoneEvent() | \
+                                ResponseWebSearchCallInProgressEvent() | \
+                                ResponseWebSearchCallCompletedEvent():
                                 # Don't need to handle "in progress" or intermediate "done" events
                                 # (though long-running code interpreter interpreting might warrant handling)
                                 continue
@@ -178,6 +204,17 @@ async def stream_response(
                             case ResponseMcpListToolsFailedEvent():
                                 # TODO: handle this (currently triggers Network/stream error exception handler)
                                 continue
+
+                            case ResponseWebSearchCallSearchingEvent():
+                                current_item_id = event.item_id
+                                yield sse_format(
+                                    "toolCallCreated",
+                                    templates.get_template('components/assistant-step.html').render(
+                                        step_type='toolCall',
+                                        step_id=event.item_id,
+                                        content="Calling web_search tool..."
+                                    )
+                                )
 
                             case ResponseFileSearchCallSearchingEvent() | ResponseCodeInterpreterCallInProgressEvent():
                                 tool = event.type.split(".")[1].split("_call")[0]
@@ -298,6 +335,11 @@ async def stream_response(
                                         file_url_path = files_router.url_path_for("download_container_file", container_id=container_id, file_id=file_id)
                                         replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
                                         yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
+                                    elif event.annotation["type"] == "url_citation":
+                                        url = event.annotation["url"]
+                                        title = event.annotation.get("title", url)
+                                        citation = f'(<a href="{escape(url)}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>)'
+                                        yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
                                     else:
                                         logger.error(f"Unhandled annotation type: {event.annotation['type']}")
 

@@ -81,6 +81,13 @@ async def read_setup(
     show_detail_env = os.getenv("SHOW_TOOL_CALL_DETAIL", "false")
     current_show_tool_call_detail = show_detail_env.lower() in {"1", "true", "yes", "on"}
 
+    # Web search config
+    web_search_context_size = os.getenv("WEB_SEARCH_CONTEXT_SIZE", "medium")
+    web_search_country = os.getenv("WEB_SEARCH_LOCATION_COUNTRY", "")
+    web_search_city = os.getenv("WEB_SEARCH_LOCATION_CITY", "")
+    web_search_region = os.getenv("WEB_SEARCH_LOCATION_REGION", "")
+    web_search_timezone = os.getenv("WEB_SEARCH_LOCATION_TIMEZONE", "")
+
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."
     
@@ -129,6 +136,11 @@ async def read_setup(
             "available_models": available_models,
             "existing_registry_entries": read_registry_entries(),
             "existing_mcp_servers": existing_mcp_servers,
+            "web_search_context_size": web_search_context_size,
+            "web_search_country": web_search_country,
+            "web_search_city": web_search_city,
+            "web_search_region": web_search_region,
+            "web_search_timezone": web_search_timezone,
         }
     )
 
@@ -217,7 +229,12 @@ async def save_app_config(
     mcp_connector_ids: List[str] = Form(default=[]),
     mcp_authorizations: List[str] = Form(default=[]),
     mcp_headers_jsons: List[str] = Form(default=[]),
-    mcp_require_approvals: List[str] = Form(default=[])
+    mcp_require_approvals: List[str] = Form(default=[]),
+    web_search_context_size: Optional[str] = Form(default=None),
+    web_search_country: Optional[str] = Form(default=None),
+    web_search_city: Optional[str] = Form(default=None),
+    web_search_region: Optional[str] = Form(default=None),
+    web_search_timezone: Optional[str] = Form(default=None),
 ) -> RedirectResponse:
     status = "success"
     message_text = ""
@@ -311,6 +328,18 @@ async def save_app_config(
             generate_registry_file(entries, mcp_servers=mcp_servers)
             status = "success"
             message_text = "Tool config saved."
+        elif action == "save_web_search_config":
+            # Save web search configuration
+            ctx_size = (web_search_context_size or "medium").strip()
+            if ctx_size not in {"low", "medium", "high"}:
+                ctx_size = "medium"
+            update_env_file("WEB_SEARCH_CONTEXT_SIZE", ctx_size)
+            update_env_file("WEB_SEARCH_LOCATION_COUNTRY", (web_search_country or "").strip())
+            update_env_file("WEB_SEARCH_LOCATION_CITY", (web_search_city or "").strip())
+            update_env_file("WEB_SEARCH_LOCATION_REGION", (web_search_region or "").strip())
+            update_env_file("WEB_SEARCH_LOCATION_TIMEZONE", (web_search_timezone or "").strip())
+            status = "success"
+            message_text = "Web search configuration saved."
         else:
             # Standard app config save
             if model is None or instructions is None:

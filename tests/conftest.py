@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import socket
@@ -13,6 +14,34 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# ---------------------------------------------------------------------------
+# Capture the real API key from .env BEFORE any fixtures modify it.
+# This is used by live integration tests that need to hit the real API.
+# ---------------------------------------------------------------------------
+def _read_real_api_key() -> str:
+    """Read the real API key from os.environ or .env file.
+
+    Called once at conftest import time — before any test fixtures modify
+    the environment.  Falls back to .env on disk if os.environ is empty.
+    """
+    # 1. Check os.environ first (may be set by the shell or a prior load_dotenv)
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if key and not key.startswith("sk-fake"):
+        return key
+    # 2. Fall back to reading .env directly
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text().splitlines():
+        m = re.match(r"^OPENAI_API_KEY=(.+)$", line)
+        if m:
+            val = m.group(1).strip()
+            if val and not val.startswith("sk-fake"):
+                return val
+    return ""
+
+REAL_API_KEY: str = _read_real_api_key()
 
 
 @pytest.fixture
@@ -69,6 +98,27 @@ def _isolate_asyncio_running_loop(request: pytest.FixtureRequest) -> Iterator[No
             _aio_events._set_running_loop(saved)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _backup_dotenv() -> Iterator[None]:
+    """Back up .env at session start and restore it at session end.
+
+    This ensures a crashed or interrupted test run does not permanently
+    corrupt the user's .env file.
+    """
+    env_path = PROJECT_ROOT / ".env"
+    try:
+        original = env_path.read_text()
+    except FileNotFoundError:
+        original = None
+
+    yield
+
+    if original is not None:
+        env_path.write_text(original)
+    else:
+        env_path.unlink(missing_ok=True)
+
+
 @pytest.fixture(scope="session")
 def app_server() -> Generator[int, None, None]:
     """Start the FastAPI app in a background thread on a free port."""
@@ -108,13 +158,15 @@ def base_url(app_server: int) -> str:  # type: ignore[override]
 
 
 @contextmanager
-def _dotenv(overrides: dict[str, str]) -> Iterator[None]:
+def _dotenv(overrides: dict[str, str], *, set_fake_api_key: bool = True) -> Iterator[None]:
     """
     Write a temporary .env for the duration of a single test, then restore.
 
-    Also keeps OPENAI_API_KEY set to the fake value in os.environ so that the
-    FastAPI Depends(lambda: AsyncOpenAI()) in route signatures never raises
-    before load_dotenv(override=True) has a chance to run inside the route body.
+    Saves and restores both the .env file and os.environ for every key in
+    *overrides*.  When *set_fake_api_key* is True (the default, used by
+    Playwright tests), OPENAI_API_KEY is also force-set in os.environ so
+    the FastAPI ``Depends(lambda: AsyncOpenAI())`` never raises before
+    ``load_dotenv(override=True)`` has a chance to run inside the route body.
     """
     env_path = PROJECT_ROOT / ".env"
 
@@ -129,7 +181,8 @@ def _dotenv(overrides: dict[str, str]) -> Iterator[None]:
     original_osenv = {k: os.environ.get(k) for k in all_keys}
 
     # Always keep a fake key in the process env for the Depends constructor.
-    os.environ["OPENAI_API_KEY"] = _FAKE_API_KEY
+    if set_fake_api_key:
+        os.environ["OPENAI_API_KEY"] = _FAKE_API_KEY
 
     # Write the test-specific .env; the route body's load_dotenv will read it.
     env_path.write_text(
@@ -151,6 +204,28 @@ def _dotenv(overrides: dict[str, str]) -> Iterator[None]:
                 os.environ[k] = orig
             elif k in os.environ:
                 del os.environ[k]
+
+
+def parse_sse_events(raw: str) -> list[dict[str, str]]:
+    """Parse raw SSE text into a list of {event, data} dicts."""
+    events: list[dict[str, str]] = []
+    current_event: str | None = None
+    current_data_lines: list[str] = []
+
+    for line in raw.split("\n"):
+        if line.startswith("event: "):
+            current_event = line[len("event: "):]
+        elif line.startswith("data: "):
+            current_data_lines.append(line[len("data: "):])
+        elif line == "" and current_event is not None:
+            events.append({
+                "event": current_event,
+                "data": "\n".join(current_data_lines),
+            })
+            current_event = None
+            current_data_lines = []
+
+    return events
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +282,26 @@ def env_function_and_mcp(app_server: int) -> Iterator[None]:
 
 
 @pytest.fixture
+def env_web_search_only(app_server: int) -> Iterator[None]:
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "web_search"}):
+        yield
+
+
+@pytest.fixture
+def env_web_search_with_config(app_server: int) -> Iterator[None]:
+    with _dotenv({
+        **_BASE_ENV,
+        "ENABLED_TOOLS": "web_search",
+        "WEB_SEARCH_CONTEXT_SIZE": "high",
+        "WEB_SEARCH_LOCATION_COUNTRY": "US",
+        "WEB_SEARCH_LOCATION_CITY": "New York",
+        "WEB_SEARCH_LOCATION_REGION": "New York",
+        "WEB_SEARCH_LOCATION_TIMEZONE": "America/New_York",
+    }):
+        yield
+
+
+@pytest.fixture
 def env_all_tools(app_server: int) -> Iterator[None]:
-    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp"}):
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp,web_search"}):
         yield
