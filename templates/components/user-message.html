@@ -1,7 +1,17 @@
 <!-- user-message.html -->
+{% if image_file_ids %}
+<div class="userMessageWrapper">
+  <div class="userImageThumbs">
+    {% for file_id in image_file_ids %}
+    <img src="/files/{{ file_id }}/content" alt="Uploaded image" class="userImageThumb" onclick="openImagePreview(this.src)" />
+    {% endfor %}
+  </div>
+  <div class="userMessage">
+    {{ user_input }}
+  </div>
+</div>
+{% else %}
 <div class="userMessage">
-  {% for file_id in image_file_ids %}
-  <img src="/files/{{ file_id }}/content" alt="Uploaded image" class="userImageThumb" />
-  {% endfor %}
   {{ user_input }}
 </div>
+{% endif %}
