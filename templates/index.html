@@ -23,6 +23,7 @@
               {% endif %}
             {% endfor %}
           </div>
+          <div class="fileCarousel" id="file-carousel"></div>
           <form id="chatForm" class="inputForm clearfix"
                 hx-on::after-request="this.reset(); clearImagePreview();"
                 hx-on::before-request="removeNetworkError(); disableSendButton()"

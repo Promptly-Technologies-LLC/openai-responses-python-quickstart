@@ -1,0 +1,8 @@
+<a class="fileCard" href="{{ file_url }}" {% if not is_image %}download{% endif %} target="_blank" rel="noopener noreferrer">
+  {% if is_image %}
+  <img src="{{ file_url }}" alt="{{ filename }}" onclick="event.preventDefault(); openImagePreview(this.src)" />
+  {% else %}
+  <span class="fileCardIcon">&#128196;</span>
+  {% endif %}
+  <span class="fileCardName">{{ filename }}</span>
+</a>
