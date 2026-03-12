@@ -338,27 +338,42 @@ async def stream_response(
                                     yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, event.delta))
 
                             case ResponseOutputTextAnnotationAddedEvent():
-                                if event.annotation and current_item_id:
+                                # Use event.item_id (not current_item_id) because annotations
+                                # may fire after other output items (e.g. code interpreter)
+                                # have changed current_item_id to a different element.
+                                annotation_target_id = event.item_id or current_item_id
+                                if event.annotation and annotation_target_id:
                                     if event.annotation["type"] == "file_citation":
                                         filename = event.annotation["filename"]
                                         # Emit a literal HTML anchor to avoid markdown parsing edge cases
                                         encoded_filename = url_quote(filename, safe="")
                                         file_url_path = files_router.url_path_for("download_stored_file", file_name=encoded_filename)
                                         citation = f"(<a href=\"{file_url_path}\">†</a>)"
-                                        yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
+                                        yield sse_format("textDelta", wrap_for_oob_swap(annotation_target_id, citation))
                                     elif event.annotation["type"] == "container_file_citation":
                                         container_id = event.annotation["container_id"]
                                         file_id = event.annotation["file_id"]
-                                        file = await client.containers.files.retrieve(file_id, container_id=container_id)
-                                        container_file_path = file.path
+                                        filename = event.annotation.get("filename", "")
                                         file_url_path = files_router.url_path_for("download_container_file", container_id=container_id, file_id=file_id)
-                                        replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
-                                        yield sse_format("textReplacement", wrap_for_oob_swap(current_item_id, replacement_payload))
+                                        # Check if the file is an image by extension
+                                        image_extensions = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
+                                        if filename.lower().endswith(image_extensions):
+                                            img_html = (
+                                                f'<div class="imageOutput">'
+                                                f'<img src="{file_url_path}" alt="Code interpreter output" />'
+                                                f'</div>'
+                                            )
+                                            yield sse_format("imageOutput", img_html)
+                                        else:
+                                            file = await client.containers.files.retrieve(file_id, container_id=container_id)
+                                            container_file_path = file.path
+                                            replacement_payload = f"sandbox:{container_file_path}|{file_url_path}"
+                                            yield sse_format("textReplacement", wrap_for_oob_swap(annotation_target_id, replacement_payload))
                                     elif event.annotation["type"] == "url_citation":
                                         url = event.annotation["url"]
                                         title = event.annotation.get("title", url)
                                         citation = f'(<a href="{escape(url)}" target="_blank" rel="noopener noreferrer">{escape(title)}</a>)'
-                                        yield sse_format("textDelta", wrap_for_oob_swap(current_item_id, citation))
+                                        yield sse_format("textDelta", wrap_for_oob_swap(annotation_target_id, citation))
                                     else:
                                         logger.error(f"Unhandled annotation type: {event.annotation['type']}")
 

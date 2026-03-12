@@ -542,7 +542,8 @@ pre {
   overflow-wrap: break-word;
 }
 
-.assistantMessage img {
+.assistantMessage img,
+.imageOutput img {
   max-width: 100%;
   margin: 8px 0px 8px 0px;
   border-radius: 8px;

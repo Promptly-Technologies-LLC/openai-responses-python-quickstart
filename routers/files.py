@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from typing import Literal
 from fastapi import (
     APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form
@@ -248,14 +249,23 @@ async def download_container_file(
         client.base_url = f"https://api.openai.com/v1/containers/{container_id}"
         file_content = await client.files.content(file_id)
         client.base_url = "https://api.openai.com/v1"
-        
+
         if not hasattr(file_content, 'content'):
             raise HTTPException(status_code=500, detail="File content not available")
-            
-        # Use stream_file_content helper
+
+        filename = file.path.split("/")[-1] or file_id
+        # Serve images inline with correct Content-Type so <img> tags work
+        mime_type, _ = mimetypes.guess_type(filename)
+        if mime_type and mime_type.startswith("image/"):
+            return StreamingResponse(
+                stream_file_content(file_content.content),
+                media_type=mime_type,
+                headers={"Content-Disposition": f'inline; filename="{filename}"'}
+            )
+
         return StreamingResponse(
-            stream_file_content(file_content.content), # Assuming stream_file_content handles bytes
-            headers={"Content-Disposition": f'attachment; filename="{file.path.split("/")[-1] or file_id}"'}
+            stream_file_content(file_content.content),
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
     except Exception as e:
         logger.error(f"Error downloading file {file_id} from OpenAI: {e}")
