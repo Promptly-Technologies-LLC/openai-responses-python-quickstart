@@ -261,24 +261,34 @@ window.removeNetworkError = function() {
 };
 
 // Image upload preview helpers
-window.previewImage = function(input) {
+window.previewImages = function(input) {
     const preview = document.getElementById('imagePreview');
-    const previewImg = document.getElementById('imagePreviewImg');
-    if (input.files && input.files[0]) {
+    if (!preview || !input.files || input.files.length === 0) return;
+
+    // Clear previous previews (keep the remove button)
+    preview.querySelectorAll('img').forEach(img => img.remove());
+
+    for (const file of input.files) {
         const reader = new FileReader();
         reader.onload = function(e) {
-            previewImg.src = e.target.result;
-            preview.style.display = 'flex';
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.alt = 'Preview';
+            // Insert before the remove button
+            const removeBtn = preview.querySelector('.imagePreviewRemove');
+            preview.insertBefore(img, removeBtn);
         };
-        reader.readAsDataURL(input.files[0]);
+        reader.readAsDataURL(file);
     }
+    preview.style.display = 'flex';
 };
 
 window.clearImagePreview = function() {
     const preview = document.getElementById('imagePreview');
-    const previewImg = document.getElementById('imagePreviewImg');
     const imageInput = document.getElementById('imageInput');
-    if (preview) preview.style.display = 'none';
-    if (previewImg) previewImg.src = '';
+    if (preview) {
+        preview.style.display = 'none';
+        preview.querySelectorAll('img').forEach(img => img.remove());
+    }
     if (imageInput) imageInput.value = '';
 };

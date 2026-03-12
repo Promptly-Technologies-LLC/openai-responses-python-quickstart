@@ -5,3 +5,5 @@ Documentation for the API can be found here: https://platform.openai.com/docs/ap
 Always use `uv` for Python dependency management.
 
 Develop on feature branches (`gh issue develop <ISSUE_NUMBER>`).
+
+Practice TDD.
