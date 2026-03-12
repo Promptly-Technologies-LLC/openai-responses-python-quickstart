@@ -475,13 +475,78 @@ pre {
   color: #333;
 }
 
+/* User message wrapper for messages with images */
+.userMessageWrapper {
+  align-self: flex-end;
+  max-width: 80%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Thumbnail row above the chat bubble */
+.userImageThumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 /* Thumbnail in user messages */
 .userImageThumb {
   max-height: 120px;
   max-width: 200px;
   border-radius: 8px;
-  margin-bottom: 8px;
   display: block;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.userImageThumb:hover {
+  opacity: 0.8;
+}
+
+/* Full-size image preview overlay */
+.imagePreviewOverlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+
+.imagePreviewOverlay.active {
+  display: flex;
+}
+
+.imagePreviewOverlay img {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.imagePreviewClose {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  font-size: 2em;
+  color: white;
+  cursor: pointer;
+  background: none;
+  border: none;
+  line-height: 1;
+  padding: 4px 12px;
+}
+
+.imagePreviewClose:hover {
+  color: #ccc;
 }
 
 .input {

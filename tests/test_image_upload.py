@@ -239,3 +239,85 @@ async def test_send_with_multiple_images_shows_all_thumbnails():
     assert html.count("<img") >= 2
     assert "file-img-x" in html
     assert "file-img-y" in html
+
+
+@pytest.mark.anyio
+async def test_image_thumbnails_appear_above_chat_bubble():
+    """Image thumbnails should be rendered outside and above the chat bubble text."""
+    mock_client = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock(return_value=make_conversation_item())
+    mock_client.files.create = AsyncMock(
+        return_value=make_file_object("file-img-above", "above.png")
+    )
+
+    fake_image = io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+    with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                "/chat/conv-123/send",
+                data={"userInput": "Check this out"},
+                files={"images": ("above.png", fake_image, "image/png")},
+            )
+
+    assert response.status_code == 200
+    html = response.text
+
+    # Images should be in a wrapper div that contains both thumbnails and the message
+    assert "userMessageWrapper" in html
+
+    # The img tag should appear BEFORE the userMessage div (i.e. above the bubble)
+    img_pos = html.index("<img")
+    bubble_pos = html.index('class="userMessage"')
+    assert img_pos < bubble_pos, "Thumbnail should appear before the chat bubble"
+
+
+@pytest.mark.anyio
+async def test_image_thumbnails_are_clickable():
+    """Image thumbnails should have onclick handler for expanding."""
+    mock_client = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock(return_value=make_conversation_item())
+    mock_client.files.create = AsyncMock(
+        return_value=make_file_object("file-img-click", "click.png")
+    )
+
+    fake_image = io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+    with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                "/chat/conv-123/send",
+                data={"userInput": "Click me"},
+                files={"images": ("click.png", fake_image, "image/png")},
+            )
+
+    assert response.status_code == 200
+    html = response.text
+
+    # Thumbnails should have an onclick handler to open the preview
+    assert "onclick" in html
+    assert "openImagePreview" in html
+
+
+@pytest.mark.anyio
+async def test_text_only_message_has_no_wrapper():
+    """Text-only messages should not have the wrapper div."""
+    mock_client = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock(return_value=make_conversation_item())
+
+    with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.post(
+                "/chat/conv-123/send",
+                data={"userInput": "No images here"},
+            )
+
+    assert response.status_code == 200
+    html = response.text
+
+    # Text-only messages should not have the wrapper
+    assert "userMessageWrapper" not in html
+    assert "userMessage" in html

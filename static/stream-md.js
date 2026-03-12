@@ -260,6 +260,48 @@ window.removeNetworkError = function() {
     }
 };
 
+// Full-size image preview overlay (created on demand to avoid empty-src rendering issues)
+window.openImagePreview = function(src) {
+    let overlay = document.getElementById('imagePreviewOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'imagePreviewOverlay';
+        overlay.className = 'imagePreviewOverlay';
+        overlay.onclick = closeImagePreview;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'imagePreviewClose';
+        closeBtn.textContent = '\u00d7';
+        closeBtn.onclick = closeImagePreview;
+
+        const img = document.createElement('img');
+        img.id = 'imagePreviewFull';
+        img.alt = 'Full size preview';
+        img.onclick = function(e) { e.stopPropagation(); };
+
+        overlay.appendChild(closeBtn);
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
+    }
+    const img = document.getElementById('imagePreviewFull');
+    img.src = src;
+    overlay.classList.add('active');
+};
+
+window.closeImagePreview = function() {
+    const overlay = document.getElementById('imagePreviewOverlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+};
+
+// Close preview on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeImagePreview();
+    }
+});
+
 // Image upload preview helpers
 window.previewImages = function(input) {
     const preview = document.getElementById('imagePreview');
