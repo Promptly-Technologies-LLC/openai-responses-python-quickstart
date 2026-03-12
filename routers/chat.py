@@ -28,6 +28,7 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_output_item import McpApprovalRequest
 from openai.types.responses import ResponseFunctionToolCall
+from openai.types.responses.response_code_interpreter_tool_call import ResponseCodeInterpreterToolCall
 from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
 from utils.function_calling import Context, FunctionResult
@@ -361,7 +362,7 @@ async def stream_response(
                                         if filename.lower().endswith(image_extensions):
                                             img_html = (
                                                 f'<div class="imageOutput">'
-                                                f'<img src="{file_url_path}" alt="Code interpreter output" />'
+                                                f'<img src="{file_url_path}" alt="Code interpreter output" onclick="openImagePreview(this.src)" style="cursor:pointer" />'
                                                 f'</div>'
                                             )
                                             yield sse_format("imageOutput", img_html)
@@ -389,7 +390,34 @@ async def stream_response(
                                     yield sse_format("toolDelta", wrap_for_oob_swap(current_item_id, str(delta)))
 
                             case ResponseOutputItemDoneEvent():
-                                if isinstance(event.item, ResponseFunctionToolCall):
+                                if isinstance(event.item, ResponseCodeInterpreterToolCall):
+                                    container_id = event.item.container_id
+                                    if container_id:
+                                        try:
+                                            container_files = await client.containers.files.list(container_id=container_id)
+                                            cards: list[str] = []
+                                            for f in container_files.data:
+                                                if f.source != "assistant":
+                                                    continue
+                                                filename = f.path.split("/")[-1]
+                                                file_url = files_router.url_path_for(
+                                                    "download_container_file",
+                                                    container_id=container_id,
+                                                    file_id=f.id,
+                                                )
+                                                is_image = filename.lower().endswith(
+                                                    (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
+                                                )
+                                                cards.append(templates.get_template("components/file-card.html").render(
+                                                    file_url=file_url, filename=filename, is_image=is_image,
+                                                ))
+                                            if cards:
+                                                carousel_html = f'<div hx-swap-oob="innerHTML:#file-carousel">{"".join(cards)}</div>'
+                                                yield sse_format("fileOutput", carousel_html)
+                                        except Exception as e:
+                                            logger.error(f"Error listing container files: {e}")
+
+                                elif isinstance(event.item, ResponseFunctionToolCall):
                                     current_item_id = event.item.id
                                     function_name = event.item.name
                                     arguments_json = json.loads(event.item.arguments)
