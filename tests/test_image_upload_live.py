@@ -148,7 +148,7 @@ class TestVisionSsePipeline:
                 send_response = await client.post(
                     f"/chat/{conv_id}/send",
                     data={"userInput": "What color is this image?"},
-                    files={"image": ("green.png", io.BytesIO(png_bytes), "image/png")},
+                    files={"images": ("green.png", io.BytesIO(png_bytes), "image/png")},
                     timeout=15.0,
                 )
                 assert send_response.status_code == 200

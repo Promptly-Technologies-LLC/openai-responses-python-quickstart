@@ -57,7 +57,7 @@ async def send_message(
     request: Request,
     conversation_id: str,
     userInput: str = Form(...),
-    image: UploadFile | None = File(None),
+    images: list[UploadFile] = File([]),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> HTMLResponse:
     # Build multimodal content array
@@ -66,20 +66,21 @@ async def send_message(
         "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
     }]
 
-    # If an image was uploaded, send it to OpenAI and add to content
-    image_file_id: str | None = None
-    if image and image.filename and image.size:
-        image_bytes = await image.read()
-        if image_bytes:
-            openai_file = await client.files.create(
-                file=(image.filename, image_bytes),
-                purpose="vision"
-            )
-            image_file_id = openai_file.id
-            content.append({
-                "type": "input_image",
-                "file_id": image_file_id,
-            })
+    # If images were uploaded, send each to OpenAI and add to content
+    image_file_ids: list[str] = []
+    for image in images:
+        if image and image.filename and image.size:
+            image_bytes = await image.read()
+            if image_bytes:
+                openai_file = await client.files.create(
+                    file=(image.filename, image_bytes),
+                    purpose="vision"
+                )
+                image_file_ids.append(openai_file.id)
+                content.append({
+                    "type": "input_image",
+                    "file_id": openai_file.id,
+                })
 
     # Create a new conversation item for the user's message
     await client.conversations.items.create(
@@ -92,7 +93,7 @@ async def send_message(
     )
 
     user_message_html = templates.get_template("components/user-message.html").render(
-        request=request, user_input=userInput, image_file_id=image_file_id
+        request=request, user_input=userInput, image_file_ids=image_file_ids
     )
     assistant_run_html = templates.get_template("components/assistant-run.html").render(
         request=request, conversation_id=conversation_id
