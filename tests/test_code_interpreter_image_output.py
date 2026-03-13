@@ -301,45 +301,49 @@ def build_code_interpreter_mock_client(stream: MockAsyncStream) -> AsyncMock:
 # Integration tests: SSE stream for code interpreter image outputs
 # ---------------------------------------------------------------------------
 
+async def _stream_ci_events(
+    stream: MockAsyncStream, env_overrides: dict | None = None
+) -> list[dict[str, str]]:
+    """Helper: set env, patch OpenAI client, stream /receive, return parsed SSE events."""
+    from main import app
+
+    env_defaults = {
+        "OPENAI_API_KEY": "sk-fake-key",
+        "RESPONSES_MODEL": "gpt-4o",
+        "RESPONSES_INSTRUCTIONS": "Test",
+        "ENABLED_TOOLS": "code_interpreter",
+        "SHOW_TOOL_CALL_DETAIL": "false",
+    }
+    env_defaults.update(env_overrides or {})
+
+    mock_client = build_code_interpreter_mock_client(stream)
+
+    with _dotenv(env_defaults, set_fake_api_key=False):
+        with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/chat/conv_test123/receive",
+                    timeout=10.0,
+                )
+                raw = response.text
+                # Explicitly close the response to prevent dangling connections
+                # that cause "Event loop is closed" errors during teardown.
+                await response.aclose()
+
+    return parse_sse_events(raw)
+
+
 class TestCodeInterpreterImageAnnotation:
     """Integration test: verify that container_file_citation annotations for image
     files emit imageOutput SSE events with the correct download URL."""
-
-    async def _stream_events(
-        self, stream: MockAsyncStream, env_overrides: dict | None = None
-    ) -> list[dict[str, str]]:
-        """Helper: set env, patch OpenAI client, stream /receive, return parsed SSE events."""
-        from main import app
-
-        env_defaults = {
-            "OPENAI_API_KEY": "sk-fake-key",
-            "RESPONSES_MODEL": "gpt-4o",
-            "RESPONSES_INSTRUCTIONS": "Test",
-            "ENABLED_TOOLS": "code_interpreter",
-            "SHOW_TOOL_CALL_DETAIL": "false",
-        }
-        env_defaults.update(env_overrides or {})
-
-        mock_client = build_code_interpreter_mock_client(stream)
-
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get(
-                        "/chat/conv_test123/receive",
-                        timeout=10.0,
-                    )
-                    raw = response.text
-
-        return parse_sse_events(raw)
 
     @pytest.mark.anyio
     async def test_image_annotation_emits_image_output_sse_event(self):
         """When a container_file_citation annotation has a .png filename,
         an imageOutput SSE event must be emitted."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) >= 1, (
@@ -351,7 +355,7 @@ class TestCodeInterpreterImageAnnotation:
         """The imageOutput SSE event must contain an <img> tag pointing to the
         container file download endpoint."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) >= 1
@@ -368,7 +372,7 @@ class TestCodeInterpreterImageAnnotation:
         """When code interpreter produces multiple images, each container_file_citation
         annotation for an image should emit its own imageOutput event."""
         stream = make_code_interpreter_image_stream(annotation_count=2)
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) == 2, (
@@ -384,7 +388,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_no_annotation_does_not_emit_image_event(self):
         """When code interpreter produces no file annotations, no imageOutput event should be emitted."""
         stream = make_code_interpreter_no_annotation_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) == 0, (
@@ -395,7 +399,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_non_image_annotation_does_not_emit_image_event(self):
         """A container_file_citation for a .csv file should NOT emit imageOutput."""
         stream = make_code_interpreter_image_stream(annotation_count=0, include_csv=True)
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) == 0, (
@@ -412,7 +416,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_mixed_image_and_csv_annotations(self):
         """When both image and non-image annotations exist, only images get imageOutput."""
         stream = make_code_interpreter_image_stream(annotation_count=1, include_csv=True)
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) == 1, (
@@ -428,7 +432,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_stream_completes_after_image_annotation(self):
         """The SSE stream should complete normally after emitting image outputs."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         event_types = [e["event"] for e in events]
         assert "endStream" in event_types, f"Stream should complete. Got: {event_types}"
@@ -438,7 +442,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_text_message_still_rendered(self):
         """Text messages should still be rendered alongside image outputs."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         msg_created = [e for e in events if e["event"] == "messageCreated"]
         assert len(msg_created) >= 1, "Expected a messageCreated event for the text response"
@@ -453,7 +457,7 @@ class TestCodeInterpreterImageAnnotation:
         not the code interpreter element. This verifies the handler uses
         event.item_id rather than the stale current_item_id."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
         assert len(image_outputs) >= 1
@@ -468,7 +472,7 @@ class TestCodeInterpreterImageAnnotation:
     async def test_tool_call_created_emitted_for_code_interpreter(self):
         """Code interpreter in-progress event should emit toolCallCreated."""
         stream = make_code_interpreter_image_stream()
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         tool_calls = [e for e in events if e["event"] == "toolCallCreated"]
         assert len(tool_calls) >= 1, (
@@ -481,40 +485,12 @@ class TestContainerFileAnnotationTargeting:
     """Verify that container_file_citation annotations for non-image files
     also use event.item_id for correct OOB targeting."""
 
-    async def _stream_events(
-        self, stream: MockAsyncStream, env_overrides: dict | None = None
-    ) -> list[dict[str, str]]:
-        from main import app
-
-        env_defaults = {
-            "OPENAI_API_KEY": "sk-fake-key",
-            "RESPONSES_MODEL": "gpt-4o",
-            "RESPONSES_INSTRUCTIONS": "Test",
-            "ENABLED_TOOLS": "code_interpreter",
-            "SHOW_TOOL_CALL_DETAIL": "false",
-        }
-        env_defaults.update(env_overrides or {})
-
-        mock_client = build_code_interpreter_mock_client(stream)
-
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get(
-                        "/chat/conv_test123/receive",
-                        timeout=10.0,
-                    )
-                    raw = response.text
-
-        return parse_sse_events(raw)
-
     @pytest.mark.anyio
     async def test_csv_annotation_targets_text_message_not_ci(self):
         """textReplacement for a CSV container_file_citation should target the
         text message element (MSG_ITEM_ID), not the code interpreter element."""
         stream = make_code_interpreter_image_stream(annotation_count=0, include_csv=True)
-        events = await self._stream_events(stream)
+        events = await _stream_ci_events(stream)
 
         text_replacements = [e for e in events if e["event"] == "textReplacement"]
         assert len(text_replacements) >= 1

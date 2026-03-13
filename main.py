@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, Response, HTMLResponse
-from routers import chat, files, setup
+from routers import audio, chat, files, setup
 from utils.conversations import create_conversation
 from fastapi.exceptions import HTTPException, RequestValidationError
 
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Mount routers
+app.include_router(audio.router)
 app.include_router(chat.router)
 app.include_router(files.router)
 app.include_router(setup.router)
