@@ -2,12 +2,12 @@ import logging
 import mimetypes
 from typing import Literal
 from fastapi import (
-    APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form
+    APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form, Query
 )
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
-from utils.files import get_or_create_vector_store, get_files_for_vector_store, store_file, retrieve_file, delete_local_file
+from utils.files import get_or_create_vector_store, get_files_for_vector_store, store_file, retrieve_file, delete_local_file, PaginatedFiles
 from utils.streaming import stream_file_content
 
 logger = logging.getLogger("uvicorn.error")
@@ -24,19 +24,24 @@ router = APIRouter(
 @router.get("/list", response_class=HTMLResponse)
 async def list_files(
     request: Request,
+    after: str | None = Query(default=None, description="Cursor for pagination"),
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
 ) -> HTMLResponse:
     """Lists files and returns an HTML partial."""
     try:
         vector_store_id = await get_or_create_vector_store(client)
-        files = await get_files_for_vector_store(vector_store_id, client)
+        result = await get_files_for_vector_store(vector_store_id, client, after=after)
+        template_name = "components/file-list-page.html" if after else "components/file-list.html"
         return templates.TemplateResponse(
-            request, "components/file-list.html",
-            {"files": files}
+            request, template_name,
+            {
+                "files": result["files"],
+                "has_more": result["has_more"],
+                "last_id": result["last_id"],
+            }
         )
     except Exception as e:
         logger.error(f"Error generating file list HTML: {e}")
-        # Return an error message within the HTML structure
         return HTMLResponse(content=f'<div id="file-list-container"><p class="error-message">Error loading files: {e}</p></div>')
 
 
@@ -108,10 +113,15 @@ async def upload_file(
             error_messages.append(f"Error uploading {file.filename}")
 
     # Fetch the updated list of files and render the partial
-    file_list = []
+    file_list: list[dict[str, str | None]] = []
+    has_more = False
+    last_id: str | None = None
     try:
         if vector_store_id:
-            file_list = await get_files_for_vector_store(vector_store_id, client)
+            result: PaginatedFiles = await get_files_for_vector_store(vector_store_id, client)
+            file_list = result["files"]
+            has_more = result["has_more"]
+            last_id = result["last_id"]
     except Exception as e:
         logger.error(f"Error fetching files: {e}")
         error_messages.append("Error fetching files for assistant")
@@ -130,6 +140,85 @@ async def upload_file(
         request, "components/file-list.html",
         {
             "files": file_list,
+            "has_more": has_more,
+            "last_id": last_id,
+            **({"error_message": error_message} if error_message else {})
+        }
+    )
+
+
+@router.delete("/", response_class=HTMLResponse)
+async def delete_all_files(
+    request: Request,
+    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+) -> HTMLResponse:
+    """Deletes all files from the vector store and OpenAI account."""
+    error_messages: list[str] = []
+
+    try:
+        vector_store_id = await get_or_create_vector_store(client)
+
+        # Paginate through all files in the vector store
+        all_vs_files = []
+        after: str | None = None
+        while True:
+            if after:
+                page = await client.vector_stores.files.list(
+                    vector_store_id=vector_store_id, limit=100, after=after
+                )
+            else:
+                page = await client.vector_stores.files.list(
+                    vector_store_id=vector_store_id, limit=100
+                )
+            all_vs_files.extend(page.data)
+            if not page.has_more:
+                break
+            after = page.last_id
+
+        # Delete each file
+        for vs_file in all_vs_files:
+            # Retrieve filename for local deletion
+            file_to_delete_name = None
+            try:
+                retrieved_file = await client.files.retrieve(vs_file.id)
+                if retrieved_file and retrieved_file.filename:
+                    file_to_delete_name = retrieved_file.filename
+            except Exception:
+                pass
+
+            if file_to_delete_name:
+                try:
+                    delete_local_file(file_to_delete_name)
+                except Exception as local_err:
+                    logger.error(f"Error deleting local file {file_to_delete_name}: {local_err}")
+
+            try:
+                deleted = await client.vector_stores.files.delete(
+                    vector_store_id=vector_store_id, file_id=vs_file.id
+                )
+                if deleted.deleted:
+                    try:
+                        await client.files.delete(file_id=vs_file.id)
+                    except Exception as file_err:
+                        logger.warning(f"Removed {vs_file.id} from vector store but failed to delete file object: {file_err}")
+                else:
+                    error_messages.append(f"Failed to remove {vs_file.id} from vector store")
+            except Exception as del_err:
+                logger.error(f"Error deleting file {vs_file.id}: {del_err}")
+                error_messages.append(f"Error deleting {vs_file.id}")
+
+    except Exception as e:
+        logger.error(f"Error during delete all: {e}")
+        error_messages.append(f"Error accessing vector store: {e}")
+
+    error_message = "; ".join(error_messages) if error_messages else None
+
+    return templates.TemplateResponse(
+        request, "components/file-list.html",
+        {
+            "files": [],
+            "has_more": False,
+            "last_id": None,
             **({"error_message": error_message} if error_message else {})
         }
     )
@@ -199,9 +288,14 @@ async def delete_file(
         error_message = f"Error accessing vector store: {vs_error}"
 
     # Always try to fetch the current list of files, even if deletion had issues
+    has_more = False
+    last_id: str | None = None
     try:
         if vector_store_id:
-            files = await get_files_for_vector_store(vector_store_id, client)
+            result: PaginatedFiles = await get_files_for_vector_store(vector_store_id, client)
+            files = result["files"]
+            has_more = result["has_more"]
+            last_id = result["last_id"]
             # Filter out the deleted file in case the API hasn't caught up yet
             files = [f for f in files if f["id"] != file_id]
         elif not error_message:
@@ -209,7 +303,6 @@ async def delete_file(
 
     except Exception as fetch_error:
         logger.error(f"Error fetching file list after delete attempt: {fetch_error}")
-        # If an error message wasn't already set, set one now. Otherwise, keep the original error.
         if not error_message:
             error_message = f"Error fetching file list: {fetch_error}"
 
@@ -218,6 +311,8 @@ async def delete_file(
         request, "components/file-list.html",
         {
             "files": files,
+            "has_more": has_more,
+            "last_id": last_id,
             **({"error_message": error_message} if error_message else {})
         }
     )
