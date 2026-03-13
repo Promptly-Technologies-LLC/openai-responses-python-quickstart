@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import mimetypes
 from typing import Literal
@@ -66,51 +67,54 @@ async def upload_file(
     error_messages: list[str] = []
     uploaded_files: list[dict[str, str | None]] = []
 
+    # 1. Read all file contents first (must happen before UploadFile objects close)
+    file_payloads: list[tuple[str, bytes]] = []
     for file in files:
-        file_content = None
         try:
-            # 1. Read the file content first
             file_content = await file.read()
             if not file.filename:
                 raise ValueError("File has no filename")
             if not file_content:
                 raise ValueError("File content is empty")
+            file_payloads.append((file.filename, file_content))
+        except ValueError as ve:
+            logger.error(f"File validation error for {file.filename}: {ve}")
+            error_messages.append(f"{file.filename}: {ve}")
 
-            # 2. Upload the file content to OpenAI
+    # 2. Upload all files to OpenAI and add to vector store in parallel
+    async def process_file(filename: str, content: bytes) -> dict[str, str | None] | None:
+        try:
             openai_file = await client.files.create(
-                file=(file.filename, file_content),
+                file=(filename, content),
                 purpose=purpose
             )
-
-            # 3. Add the uploaded file to the vector store
             vs_file = await client.vector_stores.files.create(
                 vector_store_id=vector_store_id,
                 file_id=openai_file.id
             )
-            logger.info(f"File {file.filename} uploaded to OpenAI and added to vector store.")
+            logger.info(f"File {filename} uploaded to OpenAI and added to vector store.")
 
-            # Track the uploaded file so we can include it in the response
-            # even if the list API hasn't caught up yet
-            uploaded_files.append({
+            try:
+                store_file(filename, content)
+            except Exception as e:
+                logger.error(f"Error storing file {filename} locally: {e}")
+                error_messages.append(f"Error storing {filename} locally")
+
+            return {
                 "id": openai_file.id,
-                "filename": file.filename,
+                "filename": filename,
                 "status": vs_file.status,
                 "last_error": vs_file.last_error.message if vs_file.last_error else None
-            })
-
-            # 4. Store the file locally using the same content
-            try:
-                store_file(file.filename, file_content)
-            except Exception as e:
-                logger.error(f"Error storing file {file.filename} locally: {e}")
-                error_messages.append(f"Error storing {file.filename} locally")
-
-        except ValueError as ve:
-            logger.error(f"File validation error for {file.filename}: {ve}")
-            error_messages.append(f"{file.filename}: {ve}")
+            }
         except Exception as e:
-            logger.error(f"Error uploading file {file.filename}: {e}")
-            error_messages.append(f"Error uploading {file.filename}")
+            logger.error(f"Error uploading file {filename}: {e}")
+            error_messages.append(f"Error uploading {filename}")
+            return None
+
+    results = await asyncio.gather(
+        *(process_file(fn, content) for fn, content in file_payloads)
+    )
+    uploaded_files = [r for r in results if r is not None]
 
     # Fetch the updated list of files and render the partial
     file_list: list[dict[str, str | None]] = []
@@ -175,12 +179,11 @@ async def delete_all_files(
                 break
             after = page.last_id
 
-        # Delete each file
-        for vs_file in all_vs_files:
-            # Retrieve filename for local deletion
+        # Delete each file in parallel
+        async def delete_one(vs_file_id: str) -> None:
             file_to_delete_name = None
             try:
-                retrieved_file = await client.files.retrieve(vs_file.id)
+                retrieved_file = await client.files.retrieve(vs_file_id)
                 if retrieved_file and retrieved_file.filename:
                     file_to_delete_name = retrieved_file.filename
             except Exception:
@@ -194,18 +197,20 @@ async def delete_all_files(
 
             try:
                 deleted = await client.vector_stores.files.delete(
-                    vector_store_id=vector_store_id, file_id=vs_file.id
+                    vector_store_id=vector_store_id, file_id=vs_file_id
                 )
                 if deleted.deleted:
                     try:
-                        await client.files.delete(file_id=vs_file.id)
+                        await client.files.delete(file_id=vs_file_id)
                     except Exception as file_err:
-                        logger.warning(f"Removed {vs_file.id} from vector store but failed to delete file object: {file_err}")
+                        logger.warning(f"Removed {vs_file_id} from vector store but failed to delete file object: {file_err}")
                 else:
-                    error_messages.append(f"Failed to remove {vs_file.id} from vector store")
+                    error_messages.append(f"Failed to remove {vs_file_id} from vector store")
             except Exception as del_err:
-                logger.error(f"Error deleting file {vs_file.id}: {del_err}")
-                error_messages.append(f"Error deleting {vs_file.id}")
+                logger.error(f"Error deleting file {vs_file_id}: {del_err}")
+                error_messages.append(f"Error deleting {vs_file_id}")
+
+        await asyncio.gather(*(delete_one(vs_file.id) for vs_file in all_vs_files))
 
     except Exception as e:
         logger.error(f"Error during delete all: {e}")
