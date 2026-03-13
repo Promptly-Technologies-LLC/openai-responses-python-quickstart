@@ -357,6 +357,7 @@ class TestFunctionCallSseIntegration:
                         timeout=10.0,
                     )
                     raw = response.text
+                    await response.aclose()
 
         return parse_sse_events(raw)
 
@@ -636,6 +637,7 @@ class TestWebSearchSseIntegration:
                 async with AsyncClient(transport=transport, base_url="http://test") as client:
                     response = await client.get("/chat/conv_test123/receive", timeout=10.0)
                     raw = response.text
+                    await response.aclose()
 
         return parse_sse_events(raw)
 

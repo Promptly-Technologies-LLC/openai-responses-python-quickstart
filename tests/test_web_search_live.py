@@ -277,6 +277,7 @@ class TestWebSearchSsePipeline:
                     timeout=30.0,
                 )
                 raw = response.text
+                await response.aclose()
 
         events = parse_sse_events(raw)
         event_types = [e["event"] for e in events]

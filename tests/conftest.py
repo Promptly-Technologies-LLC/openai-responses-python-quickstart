@@ -66,6 +66,31 @@ _BASE_ENV: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Suppress "Event loop is closed" RuntimeError from anyio test runner cleanup.
+#
+# On Python 3.13 + httpx + anyio, streaming response cleanup can race with
+# event loop shutdown.  anyio's TestRunner captures these as async exceptions
+# and re-raises them after the test passes.  Since they are harmless cleanup
+# artifacts (not test failures), we filter them out.
+# ---------------------------------------------------------------------------
+try:
+    import anyio._backends._asyncio as _anyio_asyncio_backend
+
+    _original_raise_async = _anyio_asyncio_backend.TestRunner._raise_async_exceptions
+
+    def _filtered_raise_async(self):  # type: ignore[no-untyped-def]
+        self._exceptions = [
+            e for e in self._exceptions
+            if not (isinstance(e, RuntimeError) and "Event loop is closed" in str(e))
+        ]
+        _original_raise_async(self)
+
+    _anyio_asyncio_backend.TestRunner._raise_async_exceptions = _filtered_raise_async  # type: ignore[assignment]
+except (ImportError, AttributeError):
+    pass  # Different anyio version; skip the patch
+
+
 @pytest.fixture(autouse=True)
 def _isolate_asyncio_running_loop(request: pytest.FixtureRequest) -> Iterator[None]:
     """

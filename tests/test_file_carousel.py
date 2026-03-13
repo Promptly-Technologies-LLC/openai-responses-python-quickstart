@@ -253,6 +253,7 @@ class TestFileCarousel:
                         timeout=10.0,
                     )
                     raw = response.text
+                    await response.aclose()
 
         return parse_sse_events(raw)
 
@@ -382,6 +383,7 @@ class TestFileCarousel:
                         timeout=10.0,
                     )
                     raw = response.text
+                    await response.aclose()
 
         events = parse_sse_events(raw)
         event_types = [e["event"] for e in events]
@@ -461,6 +463,7 @@ class TestFileCarouselLayout:
                         timeout=10.0,
                     )
                     raw = response.text
+                    await response.aclose()
 
         return parse_sse_events(raw)
 
