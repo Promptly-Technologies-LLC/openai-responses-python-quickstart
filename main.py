@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, Response, HTMLResponse
 from routers import audio, chat, files, setup
 from utils.conversations import create_conversation
+from utils.computer_use import session_manager
 from fastapi.exceptions import HTTPException, RequestValidationError
 
 
@@ -32,7 +33,8 @@ async def lifespan(app: FastAPI):
             ))
     # Optional startup logic
     yield
-    # Optional shutdown logic
+    # Clean up browser sessions on shutdown
+    await session_manager.close_all()
 
 app = FastAPI(lifespan=lifespan)
 
