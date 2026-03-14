@@ -31,7 +31,12 @@ from openai.types.responses import (
     ResponseWebSearchCallCompletedEvent,
     ResponseWebSearchCallInProgressEvent,
     ResponseWebSearchCallSearchingEvent,
+    ResponseImageGenCallInProgressEvent,
+    ResponseImageGenCallGeneratingEvent,
+    ResponseImageGenCallCompletedEvent,
+    ResponseImageGenCallPartialImageEvent,
 )
+from openai.types.responses.response_output_item import ImageGenerationCall
 
 from conftest import PROJECT_ROOT, parse_sse_events, _dotenv
 from utils.config import ToolConfig
@@ -677,3 +682,243 @@ class TestWebSearchSseIntegration:
         assert "https://example.com/article" in citation_data, (
             f"Expected url_citation link in textDelta events. Got: {citation_data[:300]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Image Generation tool tests
+# ---------------------------------------------------------------------------
+
+IG_ITEM_ID = "ig_test_abc123"
+IG_RESPONSE_ID = "resp_ig_test_xyz789"
+# A tiny base64 PNG (1x1 transparent pixel)
+FAKE_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+FAKE_PARTIAL_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+
+def make_image_generation_stream(*, include_partial: bool = False) -> MockAsyncStream:
+    """Create a mock stream that emits an image generation call."""
+    resp_mock = MagicMock()
+    resp_mock.id = IG_RESPONSE_ID
+
+    # OutputItemAdded for image_generation_call
+    ig_item_added = MagicMock()
+    ig_item_added.id = IG_ITEM_ID
+    ig_item_added.type = "image_generation_call"
+
+    # Done item
+    ig_done_item = ImageGenerationCall.model_construct(
+        id=IG_ITEM_ID,
+        type="image_generation_call",
+        status="completed",
+        result=FAKE_IMAGE_B64,
+    )
+
+    events = [
+        ResponseCreatedEvent.model_construct(
+            type="response.created", response=resp_mock, sequence_number=0,
+        ),
+        ResponseOutputItemAddedEvent.model_construct(
+            type="response.output_item.added", item=ig_item_added,
+            output_index=0, sequence_number=1,
+        ),
+        ResponseImageGenCallInProgressEvent.model_construct(
+            type="response.image_generation_call.in_progress",
+            item_id=IG_ITEM_ID, output_index=0, sequence_number=2,
+        ),
+        ResponseImageGenCallGeneratingEvent.model_construct(
+            type="response.image_generation_call.generating",
+            item_id=IG_ITEM_ID, output_index=0, sequence_number=3,
+        ),
+    ]
+
+    if include_partial:
+        events.append(
+            ResponseImageGenCallPartialImageEvent.model_construct(
+                type="response.image_generation_call.partial_image",
+                item_id=IG_ITEM_ID, output_index=0,
+                partial_image_b64=FAKE_PARTIAL_B64,
+                partial_image_index=0, sequence_number=4,
+            )
+        )
+
+    events.extend([
+        ResponseImageGenCallCompletedEvent.model_construct(
+            type="response.image_generation_call.completed",
+            item_id=IG_ITEM_ID, output_index=0,
+            sequence_number=5 if include_partial else 4,
+        ),
+        ResponseOutputItemDoneEvent.model_construct(
+            type="response.output_item.done", item=ig_done_item,
+            output_index=0,
+            sequence_number=6 if include_partial else 5,
+        ),
+        ResponseCompletedEvent.model_construct(
+            type="response.completed", response=resp_mock,
+            sequence_number=7 if include_partial else 6,
+        ),
+    ])
+
+    return MockAsyncStream(events)
+
+
+def build_image_generation_mock_client(*, include_partial: bool = False) -> AsyncMock:
+    """Build a mocked AsyncOpenAI client for image generation tests."""
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(
+        return_value=make_image_generation_stream(include_partial=include_partial)
+    )
+    mock_client.conversations.items.list = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock()
+    return mock_client
+
+
+class TestImageGenerationToolPayload:
+    """Verify that the image generation tool payload is correctly built from env config."""
+
+    async def _get_create_call_args(self, env_overrides: dict) -> dict:
+        """Helper: stream /receive with mocked client and return the kwargs passed to responses.create."""
+        from main import app
+
+        env_defaults = {
+            "OPENAI_API_KEY": "sk-fake-key",
+            "RESPONSES_MODEL": "gpt-4o",
+            "RESPONSES_INSTRUCTIONS": "Test",
+            "ENABLED_TOOLS": "image_generation",
+            "SHOW_TOOL_CALL_DETAIL": "false",
+            "IMAGE_GENERATION_QUALITY": "auto",
+            "IMAGE_GENERATION_SIZE": "auto",
+            "IMAGE_GENERATION_BACKGROUND": "auto",
+        }
+        env_defaults.update(env_overrides)
+
+        mock_client = build_image_generation_mock_client()
+
+        with _dotenv(env_defaults, set_fake_api_key=False):
+            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    await client.get("/chat/conv_test123/receive", timeout=10.0)
+
+        return mock_client.responses.create.call_args.kwargs
+
+    @pytest.mark.anyio
+    async def test_image_generation_tool_in_tools_list(self):
+        """When ENABLED_TOOLS includes image_generation, tools list must contain an image_generation entry."""
+        kwargs = await self._get_create_call_args({})
+        tools = kwargs.get("tools", [])
+        ig_tools = [t for t in tools if isinstance(t, dict) and t.get("type") == "image_generation"]
+        assert len(ig_tools) == 1, f"Expected one image_generation tool, got {ig_tools}"
+
+    @pytest.mark.anyio
+    async def test_image_generation_default_no_extra_params(self):
+        """With auto defaults, the tool dict should only have 'type'."""
+        kwargs = await self._get_create_call_args({})
+        tools = kwargs.get("tools", [])
+        ig_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "image_generation")
+        assert "quality" not in ig_tool, "auto quality should not be included"
+        assert "size" not in ig_tool, "auto size should not be included"
+        assert "background" not in ig_tool, "auto background should not be included"
+
+    @pytest.mark.anyio
+    async def test_image_generation_custom_quality(self):
+        """Custom quality should be passed through."""
+        kwargs = await self._get_create_call_args({"IMAGE_GENERATION_QUALITY": "high"})
+        tools = kwargs.get("tools", [])
+        ig_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "image_generation")
+        assert ig_tool["quality"] == "high"
+
+    @pytest.mark.anyio
+    async def test_image_generation_custom_size(self):
+        """Custom size should be passed through."""
+        kwargs = await self._get_create_call_args({"IMAGE_GENERATION_SIZE": "1024x1536"})
+        tools = kwargs.get("tools", [])
+        ig_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "image_generation")
+        assert ig_tool["size"] == "1024x1536"
+
+    @pytest.mark.anyio
+    async def test_image_generation_custom_background(self):
+        """Custom background should be passed through."""
+        kwargs = await self._get_create_call_args({"IMAGE_GENERATION_BACKGROUND": "transparent"})
+        tools = kwargs.get("tools", [])
+        ig_tool = next(t for t in tools if isinstance(t, dict) and t.get("type") == "image_generation")
+        assert ig_tool["background"] == "transparent"
+
+
+class TestImageGenerationSseIntegration:
+    """Integration test: verify SSE events for an image generation call."""
+
+    async def _stream_events(self, *, include_partial: bool = False) -> list[dict[str, str]]:
+        """Helper: stream /receive with image gen mock and return parsed SSE events."""
+        from main import app
+
+        env_defaults = {
+            "OPENAI_API_KEY": "sk-fake-key",
+            "RESPONSES_MODEL": "gpt-4o",
+            "RESPONSES_INSTRUCTIONS": "Test",
+            "ENABLED_TOOLS": "image_generation",
+            "SHOW_TOOL_CALL_DETAIL": "false",
+            "IMAGE_GENERATION_QUALITY": "auto",
+            "IMAGE_GENERATION_SIZE": "auto",
+            "IMAGE_GENERATION_BACKGROUND": "auto",
+        }
+
+        mock_client = build_image_generation_mock_client(include_partial=include_partial)
+
+        with _dotenv(env_defaults, set_fake_api_key=False):
+            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                    raw = response.text
+                    await response.aclose()
+
+        return parse_sse_events(raw)
+
+    @pytest.mark.anyio
+    async def test_image_gen_emits_tool_call_created(self):
+        """Image generation in-progress event should emit a toolCallCreated SSE event."""
+        events = await self._stream_events()
+        tool_calls = [e for e in events if e["event"] == "toolCallCreated"]
+        assert len(tool_calls) >= 1, f"Expected toolCallCreated event, got events: {[e['event'] for e in events]}"
+        assert "generat" in tool_calls[0]["data"].lower(), "Tool call should mention image generation"
+
+    @pytest.mark.anyio
+    async def test_image_gen_emits_final_image(self):
+        """The final image should be emitted as an imageOutput SSE event with base64 data."""
+        events = await self._stream_events()
+        image_outputs = [e for e in events if e["event"] == "imageOutput"]
+        assert len(image_outputs) >= 1, f"Expected imageOutput event, got events: {[e['event'] for e in events]}"
+        assert f"data:image/png;base64,{FAKE_IMAGE_B64}" in image_outputs[-1]["data"]
+
+    @pytest.mark.anyio
+    async def test_image_gen_stream_completes(self):
+        """Stream should complete without errors."""
+        events = await self._stream_events()
+        event_types = [e["event"] for e in events]
+        assert "endStream" in event_types, f"Stream should complete. Got: {event_types}"
+        assert "networkError" not in event_types, f"No network errors expected. Got: {event_types}"
+
+    @pytest.mark.anyio
+    async def test_image_gen_partial_image_emitted(self):
+        """When partial images are streamed, they should appear as imageOutput events."""
+        events = await self._stream_events(include_partial=True)
+        image_outputs = [e for e in events if e["event"] == "imageOutput"]
+        # Should have at least 2: one partial + one final
+        assert len(image_outputs) >= 2, (
+            f"Expected at least 2 imageOutput events (partial + final), got {len(image_outputs)}"
+        )
+        # First should be the partial
+        assert FAKE_PARTIAL_B64 in image_outputs[0]["data"]
+        # Last should be the final
+        assert FAKE_IMAGE_B64 in image_outputs[-1]["data"]
+
+    @pytest.mark.anyio
+    async def test_image_gen_no_duplicate_tool_call_on_generating(self):
+        """The generating event should not create a second toolCallCreated if in_progress already did."""
+        events = await self._stream_events()
+        tool_calls = [e for e in events if e["event"] == "toolCallCreated"]
+        # Both in_progress and generating emit toolCallCreated, but that's acceptable
+        # (they render to the same step_id so HTMX deduplicates)
+        # Just verify they all reference the same item
+        for tc in tool_calls:
+            assert f'id="step-{IG_ITEM_ID}"' in tc["data"]

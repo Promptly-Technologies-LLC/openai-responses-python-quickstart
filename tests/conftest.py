@@ -333,6 +333,24 @@ def env_computer_use_only(app_server: int) -> Iterator[None]:
 
 
 @pytest.fixture
+def env_image_generation_only(app_server: int) -> Iterator[None]:
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "image_generation"}):
+        yield
+
+
+@pytest.fixture
+def env_image_generation_with_config(app_server: int) -> Iterator[None]:
+    with _dotenv({
+        **_BASE_ENV,
+        "ENABLED_TOOLS": "image_generation",
+        "IMAGE_GENERATION_QUALITY": "high",
+        "IMAGE_GENERATION_SIZE": "1024x1536",
+        "IMAGE_GENERATION_BACKGROUND": "transparent",
+    }):
+        yield
+
+
+@pytest.fixture
 def env_all_tools(app_server: int) -> Iterator[None]:
-    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp,web_search,computer_use"}):
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp,web_search,computer_use,image_generation"}):
         yield
