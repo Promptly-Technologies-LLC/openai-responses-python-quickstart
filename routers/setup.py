@@ -64,7 +64,7 @@ async def read_setup(
         "gpt-4o", "gpt-4o-mini", "o1", "o1-mini",
         "o3", "o3-pro", "o3-mini", "o4-mini",
         "o3-deep-research", "o4-mini-deep-research",
-        "gpt-5-chat", "gpt-5-mini", "gpt-5-nano",
+        "gpt-5", "gpt-5.4", "gpt-5-mini", "gpt-5-nano",
         "gpt-oss-120b", "gpt-oss-20b"
     ])
     setup_message: str = ""

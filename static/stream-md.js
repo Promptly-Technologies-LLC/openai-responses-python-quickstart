@@ -40,7 +40,11 @@ function handleCustomSseEvents(evt) {
 	if (originalSSEEvent.type === 'networkError') {
 		evt.preventDefault();
 		if (typeof showNetworkError === 'function') {
-		  showNetworkError();
+		  // Extract error detail from SSE data (rendered as a <span>)
+		  const tmp = document.createElement('div');
+		  tmp.innerHTML = originalSSEEvent.data || '';
+		  const detail = tmp.textContent.trim();
+		  showNetworkError(detail);
 		}
 		return;
 	  }
@@ -238,10 +242,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Network error helpers
-window.showNetworkError = function() {
+window.showNetworkError = function(detail) {
     try {
         const banner = document.querySelector('.networkError');
         if (banner) {
+            if (detail) {
+                banner.querySelector('span').textContent = detail;
+            }
             banner.style.display = 'inline-block';
         }
     } catch (e) {

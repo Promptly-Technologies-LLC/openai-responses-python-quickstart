@@ -327,6 +327,12 @@ def env_web_search_with_config(app_server: int) -> Iterator[None]:
 
 
 @pytest.fixture
+def env_computer_use_only(app_server: int) -> Iterator[None]:
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "computer_use"}):
+        yield
+
+
+@pytest.fixture
 def env_all_tools(app_server: int) -> Iterator[None]:
-    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp,web_search"}):
+    with _dotenv({**_BASE_ENV, "ENABLED_TOOLS": "file_search,function,mcp,web_search,computer_use"}):
         yield
