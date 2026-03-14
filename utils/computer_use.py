@@ -19,6 +19,32 @@ from openai.types.responses.computer_action import (
 
 logger = logging.getLogger("uvicorn.error")
 
+_LANDING_PAGE_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><title>Browser</title></head>
+<body style="margin:0;display:flex;justify-content:center;align-items:center;
+             height:100vh;background:#f0f0f0;font-family:sans-serif;">
+  <div style="text-align:center;">
+    <h1 style="font-size:28px;margin-bottom:24px;">Browser &mdash; Enter a URL to get started</h1>
+    <form onsubmit="window.location=document.getElementById('url').value;return false;"
+          style="display:flex;gap:8px;justify-content:center;">
+      <input id="url" type="text"
+             placeholder="Enter a URL, e.g. https://example.com"
+             style="width:500px;padding:12px 16px;font-size:18px;border:2px solid #ccc;
+                    border-radius:6px;"
+             autofocus />
+      <button type="submit"
+              style="padding:12px 24px;font-size:18px;background:#2563eb;color:white;
+                     border:none;border-radius:6px;cursor:pointer;">
+        Go
+      </button>
+    </form>
+  </div>
+</body>
+</html>
+"""
+
 Action = Union[
     Click, DoubleClick, Drag, Keypress,
     Move, Screenshot, Scroll, Type, Wait,
@@ -100,7 +126,7 @@ class BrowserSession:
             device_scale_factor=1,
         )
         self._page = await context.new_page()
-        await self._page.goto("about:blank")
+        await self._page.set_content(_LANDING_PAGE_HTML, wait_until="load")
         return self._page
 
     async def screenshot(self) -> str:
@@ -157,11 +183,17 @@ class BrowserSession:
     async def close(self) -> None:
         """Close the browser and clean up resources."""
         if self._browser:
-            await self._browser.close()
+            try:
+                await self._browser.close()
+            except Exception:
+                logger.debug("Browser already disconnected during close")
             self._browser = None
             self._page = None
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception:
+                logger.debug("Playwright already stopped during close")
             self._playwright = None
 
 

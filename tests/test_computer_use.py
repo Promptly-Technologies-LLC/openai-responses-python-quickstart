@@ -218,6 +218,44 @@ class TestBrowserSession:
         assert len(result) > 0
 
     @pytest.mark.anyio
+    async def test_landing_page_has_url_input(self, session: BrowserSession):
+        page = await session._ensure_page()
+        url_input = await page.query_selector("#url")
+        assert url_input is not None
+
+    @pytest.mark.anyio
+    async def test_landing_page_has_go_button(self, session: BrowserSession):
+        page = await session._ensure_page()
+        button = await page.query_selector("button[type=submit]")
+        assert button is not None
+        text = await button.text_content()
+        assert text is not None
+        assert "Go" in text
+
+    @pytest.mark.anyio
+    async def test_landing_page_navigation(self, session: BrowserSession):
+        page = await session._ensure_page()
+        # Intercept the navigation request and serve a fake page
+        await page.route("https://example.com/", lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body="<h1>Hello</h1>",
+        ))
+        await page.fill("#url", "https://example.com/")
+        await page.click("button[type=submit]")
+        await page.wait_for_load_state("load")
+        content = await page.content()
+        assert "Hello" in content
+
+    @pytest.mark.anyio
+    async def test_landing_page_not_blank(self, session: BrowserSession):
+        result = await session.screenshot()
+        img = Image.open(io.BytesIO(base64.b64decode(result)))
+        colors = img.getcolors(maxcolors=10)
+        # A blank white page would have exactly 1 color; landing page has more
+        assert colors is None or len(colors) > 1
+
+    @pytest.mark.anyio
     async def test_close_is_idempotent(self, session: BrowserSession):
         await session.close()
         await session.close()  # Should not raise
