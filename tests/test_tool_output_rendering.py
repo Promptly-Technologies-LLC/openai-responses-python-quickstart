@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 from jinja2 import Environment, FileSystemLoader
 from openai.types.responses import (
     ResponseCompletedEvent,
+    ResponseContentPartAddedEvent,
     ResponseCreatedEvent,
     ResponseFunctionCallArgumentsDeltaEvent,
     ResponseFunctionCallArgumentsDoneEvent,
@@ -899,18 +900,17 @@ class TestImageGenerationSseIntegration:
         assert "networkError" not in event_types, f"No network errors expected. Got: {event_types}"
 
     @pytest.mark.anyio
-    async def test_image_gen_partial_image_emitted(self):
-        """When partial images are streamed, they should appear as imageOutput events."""
+    async def test_image_gen_partial_image_skipped(self):
+        """Partial images should be skipped — only the final image is emitted."""
         events = await self._stream_events(include_partial=True)
         image_outputs = [e for e in events if e["event"] == "imageOutput"]
-        # Should have at least 2: one partial + one final
-        assert len(image_outputs) >= 2, (
-            f"Expected at least 2 imageOutput events (partial + final), got {len(image_outputs)}"
+        # Should have exactly 1: the final image only
+        assert len(image_outputs) == 1, (
+            f"Expected exactly 1 imageOutput event (final only), got {len(image_outputs)}"
         )
-        # First should be the partial
-        assert FAKE_PARTIAL_B64 in image_outputs[0]["data"]
-        # Last should be the final
-        assert FAKE_IMAGE_B64 in image_outputs[-1]["data"]
+        # It should be the final image, not the partial
+        assert FAKE_IMAGE_B64 in image_outputs[0]["data"]
+        assert FAKE_PARTIAL_B64 not in image_outputs[0]["data"]
 
     @pytest.mark.anyio
     async def test_image_gen_no_duplicate_tool_call_on_generating(self):
@@ -923,3 +923,211 @@ class TestImageGenerationSseIntegration:
             f"Expected exactly 1 toolCallCreated event (from in_progress only), got {len(tool_calls)}"
         )
         assert f'id="step-{IG_ITEM_ID}"' in tool_calls[0]["data"]
+
+
+# ---------------------------------------------------------------------------
+# Image Generation + Text Message flow tests
+# ---------------------------------------------------------------------------
+
+IG_MSG_ITEM_ID = "msg_ig_text_456"
+
+
+def make_image_generation_with_text_stream() -> MockAsyncStream:
+    """Create a mock stream matching the real API: image gen call + text message."""
+    resp_mock = MagicMock()
+    resp_mock.id = IG_RESPONSE_ID
+
+    # OutputItemAdded for image_generation_call
+    ig_item_added = MagicMock()
+    ig_item_added.id = IG_ITEM_ID
+    ig_item_added.type = "image_generation_call"
+
+    # Done item for image generation
+    ig_done_item = ImageGenerationCall.model_construct(
+        id=IG_ITEM_ID,
+        type="image_generation_call",
+        status="completed",
+        result=FAKE_IMAGE_B64,
+    )
+
+    # Message output item (text describing the image)
+    msg_item = MagicMock()
+    msg_item.id = IG_MSG_ITEM_ID
+    msg_item.type = "message"
+
+    # Content part
+    content_part = MagicMock()
+    content_part.type = "output_text"
+    content_part.text = ""
+
+    return MockAsyncStream([
+        ResponseCreatedEvent.model_construct(
+            type="response.created", response=resp_mock, sequence_number=0,
+        ),
+        ResponseOutputItemAddedEvent.model_construct(
+            type="response.output_item.added", item=ig_item_added,
+            output_index=0, sequence_number=1,
+        ),
+        ResponseImageGenCallInProgressEvent.model_construct(
+            type="response.image_generation_call.in_progress",
+            item_id=IG_ITEM_ID, output_index=0, sequence_number=2,
+        ),
+        ResponseImageGenCallGeneratingEvent.model_construct(
+            type="response.image_generation_call.generating",
+            item_id=IG_ITEM_ID, output_index=0, sequence_number=3,
+        ),
+        ResponseImageGenCallPartialImageEvent.model_construct(
+            type="response.image_generation_call.partial_image",
+            item_id=IG_ITEM_ID, output_index=0,
+            partial_image_b64=FAKE_PARTIAL_B64,
+            partial_image_index=0, sequence_number=4,
+        ),
+        ResponseOutputItemDoneEvent.model_construct(
+            type="response.output_item.done", item=ig_done_item,
+            output_index=0, sequence_number=5,
+        ),
+        # Text message follows image generation (as seen in live API)
+        ResponseOutputItemAddedEvent.model_construct(
+            type="response.output_item.added", item=msg_item,
+            output_index=1, sequence_number=6,
+        ),
+        ResponseContentPartAddedEvent.model_construct(
+            type="response.content_part.added",
+            item_id=IG_MSG_ITEM_ID, output_index=1,
+            content_index=0, part=content_part, sequence_number=7,
+        ),
+        ResponseTextDeltaEvent.model_construct(
+            type="response.output_text.delta",
+            delta="Here is ",
+            item_id=IG_MSG_ITEM_ID, output_index=1,
+            content_index=0, sequence_number=8,
+        ),
+        ResponseTextDeltaEvent.model_construct(
+            type="response.output_text.delta",
+            delta="your image.",
+            item_id=IG_MSG_ITEM_ID, output_index=1,
+            content_index=0, sequence_number=9,
+        ),
+        ResponseCompletedEvent.model_construct(
+            type="response.completed", response=resp_mock, sequence_number=10,
+        ),
+    ])
+
+
+def build_image_generation_with_text_mock_client() -> AsyncMock:
+    """Build a mocked AsyncOpenAI client for image gen + text tests."""
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(
+        return_value=make_image_generation_with_text_stream()
+    )
+    mock_client.conversations.items.list = AsyncMock()
+    mock_client.conversations.items.create = AsyncMock()
+    return mock_client
+
+
+class TestImageGenerationWithTextSseIntegration:
+    """Integration test: verify SSE events for image generation followed by text message.
+
+    The real API emits a text message after image generation (the model
+    describes what it created). This test verifies the full flow produces
+    correct SSE events with matching container IDs.
+    """
+
+    async def _stream_events(self) -> list[dict[str, str]]:
+        """Stream /receive with image gen + text mock and return parsed SSE events."""
+        from main import app
+
+        env_defaults = {
+            "OPENAI_API_KEY": "sk-fake-key",
+            "RESPONSES_MODEL": "gpt-4o",
+            "RESPONSES_INSTRUCTIONS": "Test",
+            "ENABLED_TOOLS": "image_generation",
+            "SHOW_TOOL_CALL_DETAIL": "false",
+            "IMAGE_GENERATION_QUALITY": "auto",
+            "IMAGE_GENERATION_SIZE": "auto",
+            "IMAGE_GENERATION_BACKGROUND": "auto",
+        }
+
+        mock_client = build_image_generation_with_text_mock_client()
+
+        with _dotenv(env_defaults, set_fake_api_key=False):
+            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                    raw = response.text
+                    await response.aclose()
+
+        return parse_sse_events(raw)
+
+    @pytest.mark.anyio
+    async def test_image_output_emitted(self):
+        """The final image should be emitted as imageOutput."""
+        events = await self._stream_events()
+        image_outputs = [e for e in events if e["event"] == "imageOutput"]
+        assert len(image_outputs) == 1, (
+            f"Expected 1 imageOutput event, got {len(image_outputs)}. Events: {[e['event'] for e in events]}"
+        )
+        assert f"data:image/png;base64,{FAKE_IMAGE_B64}" in image_outputs[0]["data"]
+
+    @pytest.mark.anyio
+    async def test_message_created_for_text(self):
+        """A messageCreated SSE event should be emitted for the text message."""
+        events = await self._stream_events()
+        msg_events = [e for e in events if e["event"] == "messageCreated"]
+        assert len(msg_events) >= 1, (
+            f"Expected messageCreated event for text message. Events: {[e['event'] for e in events]}"
+        )
+        # The container must have an ID matching the message item
+        assert f'id="step-{IG_MSG_ITEM_ID}"' in msg_events[0]["data"], (
+            f"messageCreated should create container with id step-{IG_MSG_ITEM_ID}. Got: {msg_events[0]['data']}"
+        )
+
+    @pytest.mark.anyio
+    async def test_text_deltas_emitted(self):
+        """Text deltas should be emitted after the image generation."""
+        events = await self._stream_events()
+        text_deltas = [e for e in events if e["event"] == "textDelta"]
+        assert len(text_deltas) >= 1, (
+            f"Expected textDelta events. Events: {[e['event'] for e in events]}"
+        )
+
+    @pytest.mark.anyio
+    async def test_text_delta_oob_target_matches_container(self):
+        """The textDelta OOB swap target must match the messageCreated container ID."""
+        events = await self._stream_events()
+
+        # Extract container ID from messageCreated
+        msg_events = [e for e in events if e["event"] == "messageCreated"]
+        assert len(msg_events) >= 1, "No messageCreated event found"
+
+        # Extract the step ID from the messageCreated HTML
+        import re
+        id_match = re.search(r'id="(step-[^"]+)"', msg_events[0]["data"])
+        assert id_match, f"Could not find step ID in messageCreated: {msg_events[0]['data']}"
+        container_id = id_match.group(1)
+
+        # Check that textDelta OOB swap targets the same container
+        text_deltas = [e for e in events if e["event"] == "textDelta"]
+        assert len(text_deltas) >= 1, "No textDelta events found"
+        for td in text_deltas:
+            assert f"#{container_id}" in td["data"], (
+                f"textDelta OOB swap should target #{container_id}. Got: {td['data']}"
+            )
+
+    @pytest.mark.anyio
+    async def test_event_order(self):
+        """Events should flow: toolCallCreated → imageOutput → messageCreated → textDelta → endStream."""
+        events = await self._stream_events()
+        event_types = [e["event"] for e in events]
+
+        tool_idx = event_types.index("toolCallCreated")
+        img_idx = event_types.index("imageOutput")
+        msg_idx = event_types.index("messageCreated")
+        text_idx = event_types.index("textDelta")
+        end_idx = event_types.index("endStream")
+
+        assert tool_idx < img_idx < msg_idx < text_idx < end_idx, (
+            f"Expected order: toolCallCreated < imageOutput < messageCreated < textDelta < endStream. "
+            f"Got indices: tool={tool_idx}, img={img_idx}, msg={msg_idx}, text={text_idx}, end={end_idx}"
+        )

@@ -626,6 +626,10 @@ pre {
   order: 3;
 }
 
+.assistantMessage:empty {
+  display: none;
+}
+
 .userMessage,
 .assistantMessage,
 .codeMessage,
