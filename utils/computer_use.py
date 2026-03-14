@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import logging
-from typing import Union
+from typing import Protocol, Union, runtime_checkable
 
 from playwright.async_api import async_playwright, Browser, Page, Playwright
 
@@ -18,6 +18,48 @@ from openai.types.responses.computer_action import (
 )
 
 logger = logging.getLogger("uvicorn.error")
+
+Action = Union[
+    Click, DoubleClick, Drag, Keypress,
+    Move, Screenshot, Scroll, Type, Wait,
+]
+
+
+@runtime_checkable
+class ComputerSession(Protocol):
+    """Protocol for computer use sessions.
+
+    Implement this to provide a custom backend (e.g., VNC, xdotool, pyautogui)
+    instead of the default Playwright-based BrowserSession.
+
+    Methods:
+        screenshot: Capture the current screen as a base64-encoded PNG string.
+        execute: Perform an action and return a base64-encoded PNG screenshot.
+        close: Release resources held by this session.
+    """
+
+    async def screenshot(self) -> str: ...
+    async def execute(self, action: Action) -> str: ...
+    async def close(self) -> None: ...
+
+
+@runtime_checkable
+class ComputerSessionManager(Protocol):
+    """Protocol for managing computer use sessions by conversation ID.
+
+    Implement this to provide custom session lifecycle management.
+
+    Methods:
+        get_or_create: Return an existing session or create a new one.
+        close: Close and remove a specific session.
+        close_all: Close all sessions (called during app shutdown).
+    """
+
+    def get_or_create(
+        self, conversation_id: str, width: int = 1024, height: int = 768,
+    ) -> ComputerSession: ...
+    async def close(self, conversation_id: str) -> None: ...
+    async def close_all(self) -> None: ...
 
 _LANDING_PAGE_HTML = """\
 <!DOCTYPE html>
@@ -44,11 +86,6 @@ _LANDING_PAGE_HTML = """\
 </body>
 </html>
 """
-
-Action = Union[
-    Click, DoubleClick, Drag, Keypress,
-    Move, Screenshot, Scroll, Type, Wait,
-]
 
 # Map OpenAI key names to Playwright key names
 _KEY_MAP: dict[str, str] = {
@@ -227,8 +264,9 @@ class BrowserSessionManager:
         self._sessions.clear()
 
 
-# Module-level singleton
-session_manager = BrowserSessionManager()
+# Module-level singleton — replace with your own ComputerSessionManager implementation
+# to use a different backend (e.g., VNC, xdotool, pyautogui).
+session_manager: ComputerSessionManager = BrowserSessionManager()
 
 
 def build_computer_tool(**kwargs: object) -> dict[str, str]:

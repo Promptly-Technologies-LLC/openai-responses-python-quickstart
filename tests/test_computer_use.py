@@ -32,6 +32,8 @@ from openai.types.responses.computer_action import (
 from utils.computer_use import (
     BrowserSession,
     BrowserSessionManager,
+    ComputerSession,
+    ComputerSessionManager,
     build_computer_tool,
     describe_action,
     execute_computer_actions,
@@ -336,6 +338,16 @@ class TestBuildComputerTool:
         assert tool == {"type": "computer"}
 
 
+class TestProtocolConformance:
+    """Tests that concrete classes satisfy the Protocol interfaces."""
+
+    def test_browser_session_is_computer_session(self):
+        assert isinstance(BrowserSession(), ComputerSession)
+
+    def test_browser_session_manager_is_computer_session_manager(self):
+        assert isinstance(BrowserSessionManager(), ComputerSessionManager)
+
+
 class TestExecuteComputerAction:
     """Integration tests for execute_computer_action()."""
 
@@ -361,18 +373,22 @@ class TestExecuteComputerAction:
     async def test_reuses_session_for_same_conversation(self):
         from utils.computer_use import session_manager
 
+        manager = session_manager
+        assert isinstance(manager, BrowserSessionManager)
         action = Screenshot(type="screenshot")
         await execute_computer_actions([action],"test-conv")
         await execute_computer_actions([action],"test-conv")
-        assert "test-conv" in session_manager._sessions
+        assert "test-conv" in manager._sessions
 
     @pytest.mark.anyio
     async def test_different_conversations_different_sessions(self):
         from utils.computer_use import session_manager
 
+        manager = session_manager
+        assert isinstance(manager, BrowserSessionManager)
         action = Screenshot(type="screenshot")
         await execute_computer_actions([action],"conv-a")
         await execute_computer_actions([action],"conv-b")
-        assert "conv-a" in session_manager._sessions
-        assert "conv-b" in session_manager._sessions
-        assert session_manager._sessions["conv-a"] is not session_manager._sessions["conv-b"]
+        assert "conv-a" in manager._sessions
+        assert "conv-b" in manager._sessions
+        assert manager._sessions["conv-a"] is not manager._sessions["conv-b"]
