@@ -382,15 +382,8 @@ async def stream_response(
                                 continue
 
                             case ResponseImageGenCallPartialImageEvent():
-                                # Display partial image as it streams in
-                                img_html = (
-                                    f'<div class="imageOutput">'
-                                    f'<img src="data:image/png;base64,{event.partial_image_b64}" '
-                                    f'alt="Partial image (generating...)" '
-                                    f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
-                                    f'</div>'
-                                )
-                                yield sse_format("imageOutput", img_html)
+                                # Partial preview — skip; final image emitted by OutputItemDone
+                                continue
 
                             case ResponseContentPartAddedEvent():
                                 # This event indicates the start of annotations; skip creating a new assistantMessage
