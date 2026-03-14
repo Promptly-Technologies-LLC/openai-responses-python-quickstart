@@ -366,7 +366,7 @@ async def stream_response(
                                         )
                                     )
 
-                            case ResponseImageGenCallInProgressEvent() | ResponseImageGenCallGeneratingEvent():
+                            case ResponseImageGenCallInProgressEvent():
                                 current_item_id = event.item_id
                                 yield sse_format(
                                     "toolCallCreated",
@@ -376,6 +376,10 @@ async def stream_response(
                                         content="Generating image..."
                                     )
                                 )
+
+                            case ResponseImageGenCallGeneratingEvent():
+                                # Intermediate state — tool call step already created by in_progress
+                                continue
 
                             case ResponseImageGenCallPartialImageEvent():
                                 # Display partial image as it streams in

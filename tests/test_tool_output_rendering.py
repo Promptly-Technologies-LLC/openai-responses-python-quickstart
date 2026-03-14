@@ -914,11 +914,12 @@ class TestImageGenerationSseIntegration:
 
     @pytest.mark.anyio
     async def test_image_gen_no_duplicate_tool_call_on_generating(self):
-        """The generating event should not create a second toolCallCreated if in_progress already did."""
+        """The generating event should NOT create a second toolCallCreated —
+        only the in_progress event creates the tool call step."""
         events = await self._stream_events()
         tool_calls = [e for e in events if e["event"] == "toolCallCreated"]
-        # Both in_progress and generating emit toolCallCreated, but that's acceptable
-        # (they render to the same step_id so HTMX deduplicates)
-        # Just verify they all reference the same item
-        for tc in tool_calls:
-            assert f'id="step-{IG_ITEM_ID}"' in tc["data"]
+        # Only in_progress should emit toolCallCreated, not generating
+        assert len(tool_calls) == 1, (
+            f"Expected exactly 1 toolCallCreated event (from in_progress only), got {len(tool_calls)}"
+        )
+        assert f'id="step-{IG_ITEM_ID}"' in tool_calls[0]["data"]
