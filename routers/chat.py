@@ -25,8 +25,10 @@ from openai.types.responses import (
     ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent,
     ResponseWebSearchCallInProgressEvent, ResponseWebSearchCallSearchingEvent,
     ResponseWebSearchCallCompletedEvent,
+    ResponseImageGenCallInProgressEvent, ResponseImageGenCallGeneratingEvent,
+    ResponseImageGenCallCompletedEvent, ResponseImageGenCallPartialImageEvent,
 )
-from openai.types.responses.response_output_item import McpApprovalRequest
+from openai.types.responses.response_output_item import McpApprovalRequest, ImageGenerationCall
 from openai.types.responses import ResponseFunctionToolCall, ResponseComputerToolCall
 from openai.types.responses.response_code_interpreter_tool_call import ResponseCodeInterpreterToolCall
 from openai._types import NOT_GIVEN
@@ -183,6 +185,18 @@ async def stream_response(
             tools.append(ws_tool)
         if "computer_use" in enabled_tools:
             tools.append(build_computer_tool())
+        if "image_generation" in enabled_tools:
+            ig_tool: Dict[str, Any] = {"type": "image_generation"}
+            ig_quality = os.getenv("IMAGE_GENERATION_QUALITY", "auto").strip()
+            if ig_quality in {"low", "medium", "high"}:
+                ig_tool["quality"] = ig_quality
+            ig_size = os.getenv("IMAGE_GENERATION_SIZE", "auto").strip()
+            if ig_size in {"1024x1024", "1536x1024", "1024x1536"}:
+                ig_tool["size"] = ig_size
+            ig_background = os.getenv("IMAGE_GENERATION_BACKGROUND", "auto").strip()
+            if ig_background in {"opaque", "transparent"}:
+                ig_tool["background"] = ig_background
+            tools.append(ig_tool)
 
         try:
             stream = await client.responses.create(  # type: ignore[call-overload]
@@ -227,7 +241,8 @@ async def stream_response(
                                 ResponseMcpCallInProgressEvent() | \
                                 ResponseFunctionCallArgumentsDoneEvent() | \
                                 ResponseWebSearchCallInProgressEvent() | \
-                                ResponseWebSearchCallCompletedEvent():
+                                ResponseWebSearchCallCompletedEvent() | \
+                                ResponseImageGenCallCompletedEvent():
                                 # Don't need to handle "in progress" or intermediate "done" events
                                 # (though long-running code interpreter interpreting might warrant handling)
                                 continue
@@ -350,6 +365,28 @@ async def stream_response(
                                             content_html=approval_card_html
                                         )
                                     )
+
+                            case ResponseImageGenCallInProgressEvent() | ResponseImageGenCallGeneratingEvent():
+                                current_item_id = event.item_id
+                                yield sse_format(
+                                    "toolCallCreated",
+                                    templates.get_template('components/assistant-step.html').render(
+                                        step_type='toolCall',
+                                        step_id=event.item_id,
+                                        content="Generating image..."
+                                    )
+                                )
+
+                            case ResponseImageGenCallPartialImageEvent():
+                                # Display partial image as it streams in
+                                img_html = (
+                                    f'<div class="imageOutput">'
+                                    f'<img src="data:image/png;base64,{event.partial_image_b64}" '
+                                    f'alt="Partial image (generating...)" '
+                                    f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
+                                    f'</div>'
+                                )
+                                yield sse_format("imageOutput", img_html)
 
                             case ResponseContentPartAddedEvent():
                                 # This event indicates the start of annotations; skip creating a new assistantMessage
@@ -503,6 +540,18 @@ async def stream_response(
                                         )
                                         async for out in iterate_stream(next_stream, response_id):
                                             yield out
+
+                                elif isinstance(event.item, ImageGenerationCall):
+                                    current_item_id = event.item.id
+                                    if event.item.result:
+                                        img_html = (
+                                            f'<div class="imageOutput">'
+                                            f'<img src="data:image/png;base64,{event.item.result}" '
+                                            f'alt="Generated image" '
+                                            f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
+                                            f'</div>'
+                                        )
+                                        yield sse_format("imageOutput", img_html)
 
                                 elif isinstance(event.item, ResponseComputerToolCall):
                                     current_item_id = event.item.id

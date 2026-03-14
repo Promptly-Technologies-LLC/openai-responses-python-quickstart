@@ -95,6 +95,10 @@
                       <input type="checkbox" name="tool_types" value="computer_use" {% if "computer_use" in current_tools %}checked{% endif %}>
                       Computer Use
                     </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="image_generation" {% if "image_generation" in current_tools %}checked{% endif %}>
+                      Image Generation
+                    </label>
                   </fieldset>
 
                   {# ── Display ── #}
@@ -164,6 +168,50 @@
               {% endif %}
 
 
+
+              {# ── Image Generation Configuration ── #}
+              {% if "image_generation" in current_tools %}
+                <div class="setupSection">
+                  <h3>Image Generation</h3>
+                  <p class="setupMessage">Configure image generation quality, size, and background options.</p>
+                  <form action="{{ url_for('save_app_config') }}" method="POST">
+                    <input type="hidden" name="action" value="save_image_generation_config">
+
+                    <div>
+                      <label for="image-gen-quality">Quality:</label>
+                      <select name="image_generation_quality" id="image-gen-quality" class="input">
+                        <option value="auto" {% if image_generation_quality == "auto" %}selected{% endif %}>Auto (default)</option>
+                        <option value="low" {% if image_generation_quality == "low" %}selected{% endif %}>Low (fast, lower cost)</option>
+                        <option value="medium" {% if image_generation_quality == "medium" %}selected{% endif %}>Medium</option>
+                        <option value="high" {% if image_generation_quality == "high" %}selected{% endif %}>High</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label for="image-gen-size">Size:</label>
+                      <select name="image_generation_size" id="image-gen-size" class="input">
+                        <option value="auto" {% if image_generation_size == "auto" %}selected{% endif %}>Auto (default)</option>
+                        <option value="1024x1024" {% if image_generation_size == "1024x1024" %}selected{% endif %}>1024x1024 (square)</option>
+                        <option value="1536x1024" {% if image_generation_size == "1536x1024" %}selected{% endif %}>1536x1024 (landscape)</option>
+                        <option value="1024x1536" {% if image_generation_size == "1024x1536" %}selected{% endif %}>1024x1536 (portrait)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label for="image-gen-background">Background:</label>
+                      <select name="image_generation_background" id="image-gen-background" class="input">
+                        <option value="auto" {% if image_generation_background == "auto" %}selected{% endif %}>Auto (default)</option>
+                        <option value="opaque" {% if image_generation_background == "opaque" %}selected{% endif %}>Opaque</option>
+                        <option value="transparent" {% if image_generation_background == "transparent" %}selected{% endif %}>Transparent</option>
+                      </select>
+                    </div>
+
+                    <div class="centered-button-container">
+                      <button type="submit" class="button">Save image generation config</button>
+                    </div>
+                  </form>
+                </div>
+              {% endif %}
 
               {# ── Custom Functions & MCP Servers ── #}
               {% if "function" in current_tools or "mcp" in current_tools %}

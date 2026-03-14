@@ -88,6 +88,11 @@ async def read_setup(
     web_search_region = os.getenv("WEB_SEARCH_LOCATION_REGION", "")
     web_search_timezone = os.getenv("WEB_SEARCH_LOCATION_TIMEZONE", "")
 
+    # Image generation config
+    image_generation_quality = os.getenv("IMAGE_GENERATION_QUALITY", "auto")
+    image_generation_size = os.getenv("IMAGE_GENERATION_SIZE", "auto")
+    image_generation_background = os.getenv("IMAGE_GENERATION_BACKGROUND", "auto")
+
     if not openai_api_key:
         setup_message = "OpenAI API key is missing."
     
@@ -141,6 +146,9 @@ async def read_setup(
             "web_search_city": web_search_city,
             "web_search_region": web_search_region,
             "web_search_timezone": web_search_timezone,
+            "image_generation_quality": image_generation_quality,
+            "image_generation_size": image_generation_size,
+            "image_generation_background": image_generation_background,
         }
     )
 
@@ -235,6 +243,9 @@ async def save_app_config(
     web_search_city: Optional[str] = Form(default=None),
     web_search_region: Optional[str] = Form(default=None),
     web_search_timezone: Optional[str] = Form(default=None),
+    image_generation_quality: Optional[str] = Form(default=None),
+    image_generation_size: Optional[str] = Form(default=None),
+    image_generation_background: Optional[str] = Form(default=None),
 ) -> RedirectResponse:
     status = "success"
     message_text = ""
@@ -340,6 +351,21 @@ async def save_app_config(
             update_env_file("WEB_SEARCH_LOCATION_TIMEZONE", (web_search_timezone or "").strip())
             status = "success"
             message_text = "Web search configuration saved."
+        elif action == "save_image_generation_config":
+            quality = (image_generation_quality or "auto").strip()
+            if quality not in {"auto", "low", "medium", "high"}:
+                quality = "auto"
+            size = (image_generation_size or "auto").strip()
+            if size not in {"auto", "1024x1024", "1536x1024", "1024x1536"}:
+                size = "auto"
+            background = (image_generation_background or "auto").strip()
+            if background not in {"auto", "opaque", "transparent"}:
+                background = "auto"
+            update_env_file("IMAGE_GENERATION_QUALITY", quality)
+            update_env_file("IMAGE_GENERATION_SIZE", size)
+            update_env_file("IMAGE_GENERATION_BACKGROUND", background)
+            status = "success"
+            message_text = "Image generation configuration saved."
         else:
             # Standard app config save
             if model is None or instructions is None:

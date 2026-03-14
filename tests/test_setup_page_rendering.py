@@ -551,6 +551,85 @@ class TestComputerUseTool:
         expect(mcp_rows).not_to_be_visible()
 
 
+class TestImageGenerationTool:
+    """Tests for image_generation tool conditional rendering."""
+
+    def test_image_generation_checkbox_visible(
+        self, page: Page, base_url: str, app_server, env_api_key_no_tools
+    ):
+        """Image generation checkbox should be visible in the tools fieldset."""
+        page.goto(f"{base_url}/setup/")
+
+        image_gen_cb = page.locator('input[value="image_generation"]')
+        expect(image_gen_cb).to_be_visible()
+
+    def test_image_generation_checkbox_checked_when_enabled(
+        self, page: Page, base_url: str, app_server, env_image_generation_only
+    ):
+        """The image_generation checkbox should be checked when enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        image_gen_cb = page.locator('input[value="image_generation"]')
+        expect(image_gen_cb).to_be_checked()
+
+    def test_shows_image_generation_config_section(
+        self, page: Page, base_url: str, app_server, env_image_generation_only
+    ):
+        """When image_generation is enabled, the config section should be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        heading = page.locator('h3:has-text("Image Generation")')
+        expect(heading).to_be_visible()
+
+        quality = page.locator("#image-gen-quality")
+        expect(quality).to_be_visible()
+
+        size = page.locator("#image-gen-size")
+        expect(size).to_be_visible()
+
+        background = page.locator("#image-gen-background")
+        expect(background).to_be_visible()
+
+    def test_hides_image_generation_config_when_not_enabled(
+        self, page: Page, base_url: str, app_server, env_api_key_no_tools
+    ):
+        """Image generation config section should NOT be visible when not enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        quality = page.locator("#image-gen-quality")
+        expect(quality).not_to_be_visible()
+
+    def test_populates_saved_config_values(
+        self, page: Page, base_url: str, app_server, env_image_generation_with_config
+    ):
+        """Saved image generation config values should be populated in the form."""
+        page.goto(f"{base_url}/setup/")
+
+        quality = page.locator("#image-gen-quality")
+        expect(quality).to_have_value("high")
+
+        size = page.locator("#image-gen-size")
+        expect(size).to_have_value("1024x1536")
+
+        background = page.locator("#image-gen-background")
+        expect(background).to_have_value("transparent")
+
+    def test_no_other_tool_sections(
+        self, page: Page, base_url: str, app_server, env_image_generation_only
+    ):
+        """File search, function, and MCP sections should NOT be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        upload_form = page.locator("#upload-form")
+        expect(upload_form).not_to_be_visible()
+
+        registry_rows = page.locator("#registry-rows")
+        expect(registry_rows).not_to_be_visible()
+
+        mcp_rows = page.locator("#mcp-rows")
+        expect(mcp_rows).not_to_be_visible()
+
+
 class TestAllToolsEnabled:
     """Tests for when all three conditional tools are enabled."""
 
@@ -585,6 +664,15 @@ class TestAllToolsEnabled:
         context_size = page.locator("#web-search-context-size")
         expect(context_size).to_be_visible()
 
+    def test_shows_image_generation_config(
+        self, page: Page, base_url: str, app_server, env_all_tools
+    ):
+        """Image generation config section should be visible when all tools enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        quality = page.locator("#image-gen-quality")
+        expect(quality).to_be_visible()
+
     def test_no_computer_use_config(
         self, page: Page, base_url: str, app_server, env_all_tools
     ):
@@ -614,3 +702,6 @@ class TestAllToolsEnabled:
 
         computer_use_cb = page.locator('input[value="computer_use"]')
         expect(computer_use_cb).to_be_checked()
+
+        image_gen_cb = page.locator('input[value="image_generation"]')
+        expect(image_gen_cb).to_be_checked()
