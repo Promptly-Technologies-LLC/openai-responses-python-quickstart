@@ -14,7 +14,7 @@ Lower-level feature improvements include:
 - Support for calling tools via remote MCP servers
 - Support for more models
 
-Note that this template implements support for MCP servers, but does not yet support web search, image generation, or computer use.
+Note that this template implements does not yet support image generation.
 
 ## Quickstart Setup
 
@@ -111,3 +111,50 @@ After defining your function (and optionally a template), start the server and n
 ![Function Registration](./docs/functions.png)
 
 Don't forget to click "Regenerate tool.config.json" to save your changes. (This will regenerate the `tool.config.json` file with your new configuration.)
+
+## Customizing Computer Use
+
+The computer use tool lets the assistant control a virtual screen by issuing mouse and keyboard actions (click, type, scroll, etc.) and receiving screenshots in return.
+
+By default, this template uses a headless Playwright browser as the computer use backend. When the assistant starts a computer use session, it sees a landing page with a URL input so it can navigate to websites.
+
+To swap in a different backend (e.g., a full virtual desktop via VNC/xdotool, or a GUI automation library like pyautogui), implement the `ComputerSession` and `ComputerSessionManager` protocols defined in `utils/computer_use.py`:
+
+```python
+from utils.computer_use import ComputerSession, ComputerSessionManager, Action
+
+class MySession:
+    """Your custom session — must implement ComputerSession protocol."""
+
+    async def screenshot(self) -> str:
+        """Capture the screen and return a base64-encoded PNG string."""
+        ...
+
+    async def execute(self, action: Action) -> str:
+        """Perform an action (click, type, etc.) and return a screenshot."""
+        ...
+
+    async def close(self) -> None:
+        """Release resources."""
+        ...
+
+class MySessionManager:
+    """Your custom manager — must implement ComputerSessionManager protocol."""
+
+    def get_or_create(self, conversation_id: str, width: int = 1024, height: int = 768) -> MySession:
+        ...
+
+    async def close(self, conversation_id: str) -> None:
+        ...
+
+    async def close_all(self) -> None:
+        ...
+```
+
+Then replace the `session_manager` singleton in `utils/computer_use.py`:
+
+```python
+session_manager: ComputerSessionManager = MySessionManager()
+```
+
+No other changes are needed — the chat router and shutdown logic use `session_manager` through the protocol interface.
