@@ -100,6 +100,9 @@ class TestApiKeyPresent:
         mcp_cb = page.locator('input[value="mcp"]')
         expect(mcp_cb).to_be_visible()
 
+        computer_use_cb = page.locator('input[value="computer_use"]')
+        expect(computer_use_cb).to_be_visible()
+
 
 class TestNoToolsEnabled:
     """Tests for when no conditional tools are enabled."""
@@ -489,6 +492,65 @@ class TestWebSearchTool:
         expect(mcp_rows).not_to_be_visible()
 
 
+class TestComputerUseTool:
+    """Tests for computer_use tool conditional rendering.
+
+    The 'computer' tool type has no API-level configuration parameters,
+    so the setup page should only show a checkbox — no config section.
+    """
+
+    def test_computer_use_checkbox_visible(
+        self, page: Page, base_url: str, app_server, env_api_key_no_tools
+    ):
+        """Computer use checkbox should be visible in the tools fieldset."""
+        page.goto(f"{base_url}/setup/")
+
+        computer_use_cb = page.locator('input[value="computer_use"]')
+        expect(computer_use_cb).to_be_visible()
+
+    def test_computer_use_checkbox_checked_when_enabled(
+        self, page: Page, base_url: str, app_server, env_computer_use_only
+    ):
+        """The computer_use checkbox should be checked when enabled."""
+        page.goto(f"{base_url}/setup/")
+
+        computer_use_cb = page.locator('input[value="computer_use"]')
+        expect(computer_use_cb).to_be_checked()
+
+    def test_no_computer_use_config_section(
+        self, page: Page, base_url: str, app_server, env_computer_use_only
+    ):
+        """No config section should appear — the computer tool has no API params."""
+        page.goto(f"{base_url}/setup/")
+
+        heading = page.locator('h3:has-text("Computer Use")')
+        expect(heading).not_to_be_visible()
+
+        display_width = page.locator('input[name="computer_use_display_width"]')
+        expect(display_width).not_to_be_visible()
+
+        display_height = page.locator('input[name="computer_use_display_height"]')
+        expect(display_height).not_to_be_visible()
+
+        environment = page.locator('#computer-use-environment')
+        expect(environment).not_to_be_visible()
+
+    def test_no_other_tool_sections(
+        self, page: Page, base_url: str, app_server, env_computer_use_only
+    ):
+        """File search, function, and MCP sections should NOT be visible."""
+        page.goto(f"{base_url}/setup/")
+
+        upload_form = page.locator("#upload-form")
+        expect(upload_form).not_to_be_visible()
+
+        registry_rows = page.locator("#registry-rows")
+        expect(registry_rows).not_to_be_visible()
+
+        mcp_rows = page.locator("#mcp-rows")
+        expect(mcp_rows).not_to_be_visible()
+
+
 class TestAllToolsEnabled:
     """Tests for when all three conditional tools are enabled."""
 
@@ -523,6 +585,15 @@ class TestAllToolsEnabled:
         context_size = page.locator("#web-search-context-size")
         expect(context_size).to_be_visible()
 
+    def test_no_computer_use_config(
+        self, page: Page, base_url: str, app_server, env_all_tools
+    ):
+        """Computer use config section should NOT appear (no API params)."""
+        page.goto(f"{base_url}/setup/")
+
+        display_width = page.locator('input[name="computer_use_display_width"]')
+        expect(display_width).not_to_be_visible()
+
     def test_all_tool_checkboxes_checked(
         self, page: Page, base_url: str, app_server, env_all_tools
     ):
@@ -540,3 +611,6 @@ class TestAllToolsEnabled:
 
         web_search_cb = page.locator('input[value="web_search"]')
         expect(web_search_cb).to_be_checked()
+
+        computer_use_cb = page.locator('input[value="computer_use"]')
+        expect(computer_use_cb).to_be_checked()

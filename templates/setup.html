@@ -91,6 +91,10 @@
                       <input type="checkbox" name="tool_types" value="web_search" {% if "web_search" in current_tools %}checked{% endif %}>
                       Web Search
                     </label>
+                    <label>
+                      <input type="checkbox" name="tool_types" value="computer_use" {% if "computer_use" in current_tools %}checked{% endif %}>
+                      Computer Use
+                    </label>
                   </fieldset>
 
                   {# ── Display ── #}
@@ -158,6 +162,8 @@
                   </form>
                 </div>
               {% endif %}
+
+
 
               {# ── Custom Functions & MCP Servers ── #}
               {% if "function" in current_tools or "mcp" in current_tools %}

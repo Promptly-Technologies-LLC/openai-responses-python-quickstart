@@ -27,11 +27,12 @@ from openai.types.responses import (
     ResponseWebSearchCallCompletedEvent,
 )
 from openai.types.responses.response_output_item import McpApprovalRequest
-from openai.types.responses import ResponseFunctionToolCall
+from openai.types.responses import ResponseFunctionToolCall, ResponseComputerToolCall
 from openai.types.responses.response_code_interpreter_tool_call import ResponseCodeInterpreterToolCall
 from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
 from utils.function_calling import Context, FunctionResult
+from utils.computer_use import build_computer_tool, describe_actions, execute_computer_actions
 from utils.sse import sse_format
 from urllib.parse import quote as url_quote
 from routers.files import router as files_router
@@ -180,16 +181,25 @@ async def stream_response(
                     loc["timezone"] = timezone
                 ws_tool["user_location"] = loc
             tools.append(ws_tool)
+        if "computer_use" in enabled_tools:
+            tools.append(build_computer_tool())
 
-        stream = await client.responses.create(
-            input="",
-            conversation=conversation_id,
-            model=model,
-            tools=tools or NOT_GIVEN,
-            instructions=instructions,
-            parallel_tool_calls=False,
-            stream=True
-        )
+        try:
+            stream = await client.responses.create(  # type: ignore[call-overload]
+                input="",
+                conversation=conversation_id,
+                model=model,
+                tools=tools or NOT_GIVEN,
+                instructions=instructions,
+                parallel_tool_calls=False,
+                stream=True
+            )
+        except Exception as e:
+            logger.error(f"Unhandled error: {e}")
+            yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
+            yield sse_format("networkError", f"<span>{escape(str(e))}</span>")
+            yield sse_format("endStream", "ERROR")
+            return
 
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
             nonlocal model, conversation_id, tools, instructions, FUNCTION_REGISTRY, show_tool_call_detail
@@ -288,6 +298,16 @@ async def stream_response(
                                             step_type='toolCall',
                                             step_id=event.item.id,
                                             content=f"Calling {tool_name} tool..." + ("\n" if show_tool_call_detail else "")
+                                        )
+                                    )
+                                if event.item.type == "computer_call":
+                                    current_item_id = event.item.id
+                                    yield sse_format(
+                                        "toolCallCreated",
+                                        templates.get_template('components/assistant-step.html').render(
+                                            step_type='toolCall',
+                                            step_id=event.item.id,
+                                            content="Calling computer_use tool...\n"
                                         )
                                     )
                                 # Handle MCP approval requests by rendering an approval UI card
@@ -472,7 +492,7 @@ async def stream_response(
                                                 "output": json.dumps(result.model_dump(exclude_none=True))
                                             }]
                                         )
-                                        next_stream = await client.responses.create(
+                                        next_stream = await client.responses.create(  # type: ignore[call-overload]
                                             input="",
                                             conversation=conversation_id,
                                             model=model,
@@ -483,6 +503,64 @@ async def stream_response(
                                         )
                                         async for out in iterate_stream(next_stream, response_id):
                                             yield out
+
+                                elif isinstance(event.item, ResponseComputerToolCall):
+                                    current_item_id = event.item.id
+                                    call_id = event.item.call_id
+                                    actions = event.item.actions or []
+                                    action_desc = describe_actions(actions)
+                                    pending_checks = event.item.pending_safety_checks or []
+
+                                    # Show action details in the tool call collapsible
+                                    yield sse_format(
+                                        "toolDelta",
+                                        wrap_for_oob_swap(
+                                            current_item_id,
+                                            f'<pre class="toolCallArgs" data-tool-delta="replace">{escape(action_desc)}</pre>'
+                                        ),
+                                    )
+
+                                    # Execute the actions and capture a screenshot
+                                    screenshot_base64 = await execute_computer_actions(actions, conversation_id)
+
+                                    # Display the screenshot inline
+                                    img_html = (
+                                        f'<div class="imageOutput">'
+                                        f'<img src="data:image/png;base64,{screenshot_base64}" '
+                                        f'alt="Computer use screenshot" '
+                                        f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
+                                        f'</div>'
+                                    )
+                                    yield sse_format("imageOutput", img_html)
+
+                                    # Submit computer_call_output and continue streaming
+                                    acknowledged = [
+                                        {"id": c.id, "code": c.code, "message": c.message}
+                                        for c in pending_checks
+                                    ]
+                                    await client.conversations.items.create(
+                                        conversation_id=conversation_id,
+                                        items=[{
+                                            "type": "computer_call_output",
+                                            "call_id": call_id,
+                                            "output": {
+                                                "type": "computer_screenshot",
+                                                "image_url": f"data:image/png;base64,{screenshot_base64}",
+                                            },
+                                            **({"acknowledged_safety_checks": acknowledged} if acknowledged else {}),
+                                        }]
+                                    )
+                                    next_stream = await client.responses.create(  # type: ignore[call-overload]
+                                        input="",
+                                        conversation=conversation_id,
+                                        model=model,
+                                        tools=tools or NOT_GIVEN,
+                                        instructions=instructions,
+                                        parallel_tool_calls=False,
+                                        stream=True
+                                    )
+                                    async for out in iterate_stream(next_stream, response_id):
+                                        yield out
 
                             case ResponseCompletedEvent():
                                 yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
