@@ -265,23 +265,25 @@ class TestParallelFunctionCalls:
         assert len(tool_outputs) == 2, f"Expected 2 toolOutput events, got {len(tool_outputs)}"
 
     @pytest.mark.anyio
-    async def test_all_outputs_submitted_in_single_call(self):
+    async def test_all_outputs_submitted_individually(self):
         mock_client = build_mock_client([
             make_parallel_function_stream(),
             make_text_reply_stream(),
         ])
         await stream_events(mock_client)
 
-        # Find the call that submitted tool outputs (should contain items list)
+        # Each output should be submitted in its own call
         create_calls = mock_client.conversations.items.create.call_args_list
-        # There should be exactly one call with both outputs
-        items_calls = [
+        fn_output_calls = [
             c for c in create_calls
-            if "items" in c.kwargs and isinstance(c.kwargs["items"], list) and len(c.kwargs["items"]) == 2
+            if "items" in c.kwargs
+            and isinstance(c.kwargs["items"], list)
+            and len(c.kwargs["items"]) == 1
+            and c.kwargs["items"][0].get("type") == "function_call_output"
         ]
-        assert len(items_calls) == 1, (
-            f"Expected exactly one conversations.items.create call with 2 items, "
-            f"got calls: {create_calls}"
+        assert len(fn_output_calls) == 2, (
+            f"Expected 2 individual conversations.items.create calls for function outputs, "
+            f"got {len(fn_output_calls)} from calls: {create_calls}"
         )
 
     @pytest.mark.anyio
@@ -293,12 +295,13 @@ class TestParallelFunctionCalls:
         await stream_events(mock_client)
 
         create_calls = mock_client.conversations.items.create.call_args_list
-        items_call = next(
-            c for c in create_calls
-            if "items" in c.kwargs and isinstance(c.kwargs["items"], list) and len(c.kwargs["items"]) == 2
-        )
-        submitted_items = items_call.kwargs["items"]
-        call_ids = {item["call_id"] for item in submitted_items}
+        call_ids = set()
+        for c in create_calls:
+            items = c.kwargs.get("items", [])
+            if isinstance(items, list):
+                for item in items:
+                    if item.get("type") == "function_call_output":
+                        call_ids.add(item["call_id"])
         assert call_ids == {CALL_ID_A, CALL_ID_B}
 
     @pytest.mark.anyio
