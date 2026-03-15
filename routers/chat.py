@@ -33,9 +33,11 @@ from openai.types.responses import ResponseFunctionToolCall, ResponseComputerToo
 from openai.types.responses.response_code_interpreter_tool_call import ResponseCodeInterpreterToolCall
 from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
+from collections.abc import Coroutine
 from utils.function_calling import Context, FunctionResult
 from utils.computer_use import build_computer_tool, describe_actions, execute_computer_actions
 from utils.sse import sse_format
+from utils.tool_tasks import ToolTaskResult
 from urllib.parse import quote as url_quote
 from routers.files import router as files_router
 
@@ -205,7 +207,7 @@ async def stream_response(
                 model=model,
                 tools=tools or NOT_GIVEN,
                 instructions=instructions,
-                parallel_tool_calls=False,
+                parallel_tool_calls=True,
                 stream=True
             )
         except Exception as e:
@@ -218,6 +220,10 @@ async def stream_response(
         async def iterate_stream(s, response_id: str = "") -> AsyncGenerator[str, None]:
             nonlocal model, conversation_id, tools, instructions, FUNCTION_REGISTRY, show_tool_call_detail
             current_item_id: str = ""
+            pending_fn_tasks: dict[str, asyncio.Task[ToolTaskResult]] = {}
+            pending_computer_coros: dict[str, Coroutine] = {}
+            result_call_ids: dict[str, str] = {}
+            has_approval_request: bool = False
 
             try:
                 async with s as events:
@@ -327,6 +333,7 @@ async def stream_response(
                                     )
                                 # Handle MCP approval requests by rendering an approval UI card
                                 if isinstance(event.item, McpApprovalRequest):
+                                    has_approval_request = True
                                     current_item_id = event.item.id
                                     # Pretty print arguments JSON if possible
                                     pretty_args: str
@@ -473,6 +480,7 @@ async def stream_response(
 
                                 elif isinstance(event.item, ResponseFunctionToolCall):
                                     current_item_id = event.item.id
+                                    call_id = event.item.call_id
                                     function_name = event.item.name
                                     arguments_json = json.loads(event.item.arguments)
 
@@ -490,53 +498,41 @@ async def stream_response(
                                         ),
                                     )
 
-                                    # Dispatch via registry
-                                    result: FunctionResult[Any] = await FUNCTION_REGISTRY.call(function_name, arguments_json, context=Context())
-
-                                    # Render output (custom widget for weather, generic otherwise)
-                                    try:
-                                        if function_name in TEMPLATE_REGISTRY:
-                                            tpl = TEMPLATE_REGISTRY[function_name]
-                                            if isinstance(tpl, tuple):
-                                                tpl_name, context_builder = tpl
-                                                html = templates.get_template(tpl_name).render(**context_builder(result))
+                                    # Spawn execution task for concurrent gathering later
+                                    async def run_function(
+                                        name: str, args: dict, cid: str,
+                                        fn_registry: "ToolRegistry", tpl_registry: dict
+                                    ) -> ToolTaskResult:
+                                        result: FunctionResult[Any] = await fn_registry.call(name, args, context=Context())
+                                        sse_events: list[tuple[str, str]] = []
+                                        try:
+                                            if name in tpl_registry:
+                                                tpl = tpl_registry[name]
+                                                if isinstance(tpl, tuple):
+                                                    tpl_name, context_builder = tpl
+                                                    html = templates.get_template(tpl_name).render(**context_builder(result))
+                                                else:
+                                                    html = templates.get_template(tpl).render(tool=result)
+                                                sse_events.append(("toolOutput", html))
                                             else:
-                                                html = templates.get_template(tpl).render(tool=result)
-                                            yield sse_format("toolOutput", html)
-                                        else:
-                                            payload = result.model_dump(exclude_none=True)
-                                            yield sse_format("toolOutput", f"<pre>{json.dumps(payload, indent=2)}</pre>")
-                                    except Exception as e:
-                                        logger.error(f"Error rendering tool output for '{function_name}': {e}")
-                                        # Fallback to raw JSON
-                                        yield sse_format("toolOutput", f"<pre>{json.dumps(result.model_dump(exclude_none=True))}</pre>")
+                                                payload = result.model_dump(exclude_none=True)
+                                                sse_events.append(("toolOutput", f"<pre>{json.dumps(payload, indent=2)}</pre>"))
+                                        except Exception as e:
+                                            logger.error(f"Error rendering tool output for '{name}': {e}")
+                                            sse_events.append(("toolOutput", f"<pre>{json.dumps(result.model_dump(exclude_none=True))}</pre>"))
+                                        output_item = {
+                                            "type": "function_call_output",
+                                            "call_id": cid,
+                                            "output": json.dumps(result.model_dump(exclude_none=True))
+                                        }
+                                        return ToolTaskResult(sse_events=sse_events, output_item=output_item)
 
-                                    # Submit outputs and continue streaming
-                                    items = await client.conversations.items.list(
-                                        conversation_id=conversation_id
+                                    task = asyncio.create_task(
+                                        run_function(function_name, arguments_json, call_id,
+                                                     FUNCTION_REGISTRY, TEMPLATE_REGISTRY)
                                     )
-                                    function_call_item = next((item for item in items.data if item.id == current_item_id), None)
-                                    if function_call_item:
-                                        call_id = function_call_item.call_id
-                                        await client.conversations.items.create(
-                                            conversation_id=conversation_id,
-                                            items=[{
-                                                "type": "function_call_output",
-                                                "call_id": call_id,
-                                                "output": json.dumps(result.model_dump(exclude_none=True))
-                                            }]
-                                        )
-                                        next_stream = await client.responses.create(  # type: ignore[call-overload]
-                                            input="",
-                                            conversation=conversation_id,
-                                            model=model,
-                                            tools=tools or NOT_GIVEN,
-                                            instructions=instructions,
-                                            parallel_tool_calls=False,
-                                            stream=True
-                                        )
-                                        async for out in iterate_stream(next_stream, response_id):
-                                            yield out
+                                    pending_fn_tasks[current_item_id] = task
+                                    result_call_ids[current_item_id] = call_id
 
                                 elif isinstance(event.item, ImageGenerationCall):
                                     current_item_id = event.item.id
@@ -566,56 +562,125 @@ async def stream_response(
                                         ),
                                     )
 
-                                    # Execute the actions and capture a screenshot
-                                    screenshot_base64 = await execute_computer_actions(actions, conversation_id)
-
-                                    # Display the screenshot inline
-                                    img_html = (
-                                        f'<div class="imageOutput">'
-                                        f'<img src="data:image/png;base64,{screenshot_base64}" '
-                                        f'alt="Computer use screenshot" '
-                                        f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
-                                        f'</div>'
-                                    )
-                                    yield sse_format("imageOutput", img_html)
-
-                                    # Submit computer_call_output and continue streaming
-                                    acknowledged = [
-                                        {"id": c.id, "code": c.code, "message": c.message}
-                                        for c in pending_checks
-                                    ]
-                                    await client.conversations.items.create(
-                                        conversation_id=conversation_id,
-                                        items=[{
+                                    # Store coroutine for sequential execution later (avoids browser race conditions)
+                                    async def run_computer(
+                                        computer_actions: list, cid: str,
+                                        safety_checks: list, conv_id: str
+                                    ) -> ToolTaskResult:
+                                        screenshot_base64 = await execute_computer_actions(computer_actions, conv_id)
+                                        img_html = (
+                                            f'<div class="imageOutput">'
+                                            f'<img src="data:image/png;base64,{screenshot_base64}" '
+                                            f'alt="Computer use screenshot" '
+                                            f'onclick="openImagePreview(this.src)" style="cursor:pointer" />'
+                                            f'</div>'
+                                        )
+                                        acknowledged = [
+                                            {"id": c.id, "code": c.code, "message": c.message}
+                                            for c in safety_checks
+                                        ]
+                                        output_item = {
                                             "type": "computer_call_output",
-                                            "call_id": call_id,
+                                            "call_id": cid,
                                             "output": {
                                                 "type": "computer_screenshot",
                                                 "image_url": f"data:image/png;base64,{screenshot_base64}",
                                             },
                                             **({"acknowledged_safety_checks": acknowledged} if acknowledged else {}),
-                                        }]
+                                        }
+                                        return ToolTaskResult(
+                                            sse_events=[("imageOutput", img_html)],
+                                            output_item=output_item,
+                                        )
+
+                                    pending_computer_coros[current_item_id] = run_computer(
+                                        actions, call_id, pending_checks, conversation_id
                                     )
-                                    next_stream = await client.responses.create(  # type: ignore[call-overload]
-                                        input="",
-                                        conversation=conversation_id,
-                                        model=model,
-                                        tools=tools or NOT_GIVEN,
-                                        instructions=instructions,
-                                        parallel_tool_calls=False,
-                                        stream=True
-                                    )
-                                    async for out in iterate_stream(next_stream, response_id):
-                                        yield out
+                                    result_call_ids[current_item_id] = call_id
 
                             case ResponseCompletedEvent():
-                                yield sse_format("runCompleted", "<span hx-swap-oob=\"outerHTML:.dots\"></span>")
-                                yield sse_format("endStream", "DONE")
+                                has_pending = bool(pending_fn_tasks or pending_computer_coros)
+
+                                if has_pending:
+                                    # Track original insertion order for UI consistency
+                                    all_item_ids = list(pending_fn_tasks.keys()) + list(pending_computer_coros.keys())
+
+                                    # Run function tasks concurrently
+                                    fn_results: dict[str, ToolTaskResult | Exception] = {}
+                                    if pending_fn_tasks:
+                                        gathered = await asyncio.gather(
+                                            *pending_fn_tasks.values(),
+                                            return_exceptions=True
+                                        )
+                                        fn_results = dict(zip(pending_fn_tasks.keys(), gathered))
+                                    pending_fn_tasks.clear()
+
+                                    # Run computer coroutines sequentially
+                                    computer_results: dict[str, ToolTaskResult | Exception] = {}
+                                    for item_id, coro in pending_computer_coros.items():
+                                        try:
+                                            computer_results[item_id] = await coro
+                                        except Exception as e:
+                                            computer_results[item_id] = e
+                                    pending_computer_coros.clear()
+
+                                    # Merge results and emit/collect in original call order
+                                    all_results = {**fn_results, **computer_results}
+                                    output_items: list[dict] = []
+                                    for item_id in all_item_ids:
+                                        result = all_results[item_id]
+                                        if isinstance(result, Exception):
+                                            logger.error(f"Tool task {item_id} failed: {result}")
+                                            yield sse_format("toolOutput",
+                                                f'<pre>Error: {escape(str(result))}</pre>')
+                                            output_items.append({
+                                                "type": "function_call_output",
+                                                "call_id": result_call_ids[item_id],
+                                                "output": json.dumps({"error": str(result)})
+                                            })
+                                            continue
+                                        for event_name, html in result.sse_events:
+                                            yield sse_format(event_name, html)
+                                        output_items.append(result.output_item)
+
+                                    # Submit all outputs in one call
+                                    if output_items:
+                                        await client.conversations.items.create(
+                                            conversation_id=conversation_id,
+                                            items=output_items
+                                        )
+
+                                        if has_approval_request:
+                                            # Don't restart stream — approval flow handles continuation
+                                            yield sse_format("runCompleted", '<span hx-swap-oob="outerHTML:.dots"></span>')
+                                            yield sse_format("endStream", "DONE")
+                                            return
+                                        else:
+                                            # Restart stream once
+                                            next_stream = await client.responses.create(  # type: ignore[call-overload]
+                                                input="",
+                                                conversation=conversation_id,
+                                                model=model,
+                                                tools=tools or NOT_GIVEN,
+                                                instructions=instructions,
+                                                parallel_tool_calls=True,
+                                                stream=True
+                                            )
+                                            async for out in iterate_stream(next_stream, response_id):
+                                                yield out
+                                else:
+                                    yield sse_format("runCompleted", '<span hx-swap-oob="outerHTML:.dots"></span>')
+                                    yield sse_format("endStream", "DONE")
 
                             case _:
                                 logger.error(f"Unhandled event: {event}")
             except asyncio.CancelledError:
-                # Important: let cancellation/cleanup signals propagate
+                # Cancel any in-flight function tasks
+                for task in pending_fn_tasks.values():
+                    task.cancel()
+                await asyncio.gather(*pending_fn_tasks.values(), return_exceptions=True)
+                pending_fn_tasks.clear()
+                pending_computer_coros.clear()  # unawaited coroutines are just discarded
                 raise
             except Exception as e:
                 logger.error(f"Network/stream error: {e}")
