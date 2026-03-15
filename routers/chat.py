@@ -643,13 +643,15 @@ async def stream_response(
                                             yield sse_format(event_name, html)
                                         output_items.append(result.output_item)
 
-                                    # Submit all outputs in one call
-                                    if output_items:
+                                    # Submit each output item individually
+                                    # (batch submission can cause the API to silently drop items)
+                                    for oi in output_items:
                                         await client.conversations.items.create(
                                             conversation_id=conversation_id,
-                                            items=output_items
+                                            items=[oi]
                                         )
 
+                                    if output_items:
                                         if has_approval_request:
                                             # Don't restart stream — approval flow handles continuation
                                             yield sse_format("runCompleted", '<span hx-swap-oob="outerHTML:.dots"></span>')
