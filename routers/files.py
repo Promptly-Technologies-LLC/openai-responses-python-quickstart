@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import mimetypes
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -42,8 +42,8 @@ router = APIRouter(
 @router.get("/list", response_class=HTMLResponse)
 async def list_files(
     request: Request,
-    after: str | None = Query(default=None, description="Cursor for pagination"),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())],
+    after: Annotated[str | None, Query(description="Cursor for pagination")] = None
 ) -> HTMLResponse:
     """Lists files and returns an HTML partial."""
     try:
@@ -67,9 +67,9 @@ async def list_files(
 @router.post("/", response_class=HTMLResponse)
 async def upload_file(
     request: Request,
-    files: list[UploadFile] = File(...),
-    purpose: Literal["assistants", "vision"] = Form(default="assistants"),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    files: Annotated[list[UploadFile], File()],
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())],
+    purpose: Annotated[Literal["assistants", "vision"], Form()] = "assistants"
 ) -> HTMLResponse:
     """Uploads one or more files, adds them to the vector store, and returns the updated file list HTML."""
     try:
@@ -171,7 +171,7 @@ async def upload_file(
 @router.delete("/", response_class=HTMLResponse)
 async def delete_all_files(
     request: Request,
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> HTMLResponse:
     """Deletes all files from the vector store and OpenAI account."""
     error_messages: list[str] = []
@@ -250,8 +250,8 @@ async def delete_all_files(
 @router.delete("/{file_id}", response_class=HTMLResponse)
 async def delete_file(
     request: Request,
-    file_id: str = Path(..., description="The ID of the file to delete"),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    file_id: Annotated[str, Path(description="The ID of the file to delete")],
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> HTMLResponse:
     """Deletes a file from the vector store and OpenAI account, then returns the updated file list HTML."""
     error_message = None
@@ -345,7 +345,7 @@ async def delete_file(
 
 @router.get("/{file_name}")
 async def download_stored_file(
-    file_name: str = Path(..., description="The name of the file to retrieve")
+    file_name: Annotated[str, Path(description="The name of the file to retrieve")]
 ) -> FileResponse:
     """This endpoint retrieves files uploaded TO openai as file search inputs
     and stored locally in the uploads directory (since OpenAI doesn't serve
@@ -355,9 +355,9 @@ async def download_stored_file(
 
 @router.get("/{container_id}/{file_id}/openai_content")
 async def download_container_file(
-    container_id: str = Path(..., description="The ID of the container the file is stored in"),
-    file_id: str = Path(..., description="The ID of the file stored in OpenAI"),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    container_id: Annotated[str, Path(description="The ID of the container the file is stored in")],
+    file_id: Annotated[str, Path(description="The ID of the file stored in OpenAI")],
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> StreamingResponse:
     """This endpoint retrieves files created by the code interpreter"""
     try:
@@ -392,7 +392,7 @@ async def download_container_file(
 @router.get("/{file_id}/content")
 async def get_assistant_image_content(
     file_id: str,
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> StreamingResponse:
     """
     Streams file content from OpenAI API.

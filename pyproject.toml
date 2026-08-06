@@ -25,20 +25,6 @@ ignore = [
     "BLE001",
 ]
 
-[tool.ruff.lint.flake8-bugbear]
-# FastAPI's parameter markers are designed to be called in argument defaults.
-extend-immutable-calls = [
-    "fastapi.Body",
-    "fastapi.Cookie",
-    "fastapi.Depends",
-    "fastapi.File",
-    "fastapi.Form",
-    "fastapi.Header",
-    "fastapi.Path",
-    "fastapi.Query",
-    "fastapi.Security",
-]
-
 [tool.pytest.ini_options]
 markers = [
     "live: tests that hit the real OpenAI API (require valid OPENAI_API_KEY)",

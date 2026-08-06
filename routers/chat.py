@@ -6,7 +6,7 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Annotated, Any, cast
 from urllib.parse import quote as url_quote
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -92,9 +92,9 @@ def wrap_for_oob_swap(step_id: str, text_value: str) -> str:
 async def send_message(
     request: Request,
     conversation_id: str,
-    userInput: str = Form(...),
-    images: list[UploadFile] = File([]),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    userInput: Annotated[str, Form()],
+    images: Annotated[list[UploadFile], File(default_factory=list)],
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> HTMLResponse:
     # Build multimodal content array
     content: list[dict[str, str]] = [{
@@ -142,7 +142,7 @@ async def send_message(
 @router.get("/receive")
 async def stream_response(
     conversation_id: str,
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())]
 ) -> StreamingResponse:
     async def event_generator() -> AsyncGenerator[str, None]:
         # Load config from env
@@ -744,10 +744,10 @@ async def stream_response(
 async def approve_mcp_tool(
     request: Request,
     conversation_id: str,
-    approval_request_id: str = Form(...),
-    approve: bool = Form(...),
-    reason: str | None = Form(None),
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())
+    approval_request_id: Annotated[str, Form()],
+    approve: Annotated[bool, Form()],
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())],
+    reason: Annotated[str | None, Form()] = None
 ) -> HTMLResponse:
     # Create an approval response conversation item
     try:
