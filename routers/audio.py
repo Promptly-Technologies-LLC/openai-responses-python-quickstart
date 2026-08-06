@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, File, UploadFile
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/audio", tags=["audio"])
 
 
 @router.post("/transcribe")
-async def transcribe_audio(audio: UploadFile = File(...)) -> PlainTextResponse:
+async def transcribe_audio(audio: Annotated[UploadFile, File()]) -> PlainTextResponse:
     """Transcribe an uploaded audio file using OpenAI Whisper."""
     load_dotenv(override=True)
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))

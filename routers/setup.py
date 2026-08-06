@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from itertools import zip_longest
+from typing import Annotated
 from urllib.parse import quote
 
 from dotenv import load_dotenv
@@ -28,7 +29,7 @@ router = APIRouter(prefix="/setup", tags=["Setup"])
 templates = Jinja2Templates(directory="templates")
 
 @router.post("/api-key")
-async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
+async def set_openai_api_key(api_key: Annotated[str, Form()]) -> RedirectResponse:
     """
     Set the OpenAI API key in the application's environment variables.
     
@@ -56,7 +57,7 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
 @router.get("/")
 async def read_setup(
     request: Request,
-    client: AsyncOpenAI = Depends(lambda: AsyncOpenAI()),
+    client: Annotated[AsyncOpenAI, Depends(lambda: AsyncOpenAI())],
     status: str | None = None,
     message_text: str | None = None
 ) -> Response:
@@ -230,28 +231,32 @@ async def delete_mcp_row() -> Response:
 
 @router.post("/config")
 async def save_app_config(
-    action: str | None = Form(default=None),
-    tool_types: list[str] = Form(default=[]),
-    model: str | None = Form(default=None),
-    instructions: str | None = Form(default=None),
-    show_tool_call_detail: str | None = Form(default=None),
-    reg_function_names: list[str] = Form(default=[]),
-    reg_import_paths: list[str] = Form(default=[]),
-    reg_template_paths: list[str] = Form(default=[]),
-    mcp_labels: list[str] = Form(default=[]),
-    mcp_server_urls: list[str] = Form(default=[]),
-    mcp_connector_ids: list[str] = Form(default=[]),
-    mcp_authorizations: list[str] = Form(default=[]),
-    mcp_headers_jsons: list[str] = Form(default=[]),
-    mcp_require_approvals: list[str] = Form(default=[]),
-    web_search_context_size: str | None = Form(default=None),
-    web_search_country: str | None = Form(default=None),
-    web_search_city: str | None = Form(default=None),
-    web_search_region: str | None = Form(default=None),
-    web_search_timezone: str | None = Form(default=None),
-    image_generation_quality: str | None = Form(default=None),
-    image_generation_size: str | None = Form(default=None),
-    image_generation_background: str | None = Form(default=None),
+    # Keyword-only so the repeated-row fields (which default via
+    # `default_factory` and therefore take no positional default) can stay
+    # grouped with the scalars they belong to.
+    *,
+    action: Annotated[str | None, Form()] = None,
+    tool_types: Annotated[list[str], Form(default_factory=list)],
+    model: Annotated[str | None, Form()] = None,
+    instructions: Annotated[str | None, Form()] = None,
+    show_tool_call_detail: Annotated[str | None, Form()] = None,
+    reg_function_names: Annotated[list[str], Form(default_factory=list)],
+    reg_import_paths: Annotated[list[str], Form(default_factory=list)],
+    reg_template_paths: Annotated[list[str], Form(default_factory=list)],
+    mcp_labels: Annotated[list[str], Form(default_factory=list)],
+    mcp_server_urls: Annotated[list[str], Form(default_factory=list)],
+    mcp_connector_ids: Annotated[list[str], Form(default_factory=list)],
+    mcp_authorizations: Annotated[list[str], Form(default_factory=list)],
+    mcp_headers_jsons: Annotated[list[str], Form(default_factory=list)],
+    mcp_require_approvals: Annotated[list[str], Form(default_factory=list)],
+    web_search_context_size: Annotated[str | None, Form()] = None,
+    web_search_country: Annotated[str | None, Form()] = None,
+    web_search_city: Annotated[str | None, Form()] = None,
+    web_search_region: Annotated[str | None, Form()] = None,
+    web_search_timezone: Annotated[str | None, Form()] = None,
+    image_generation_quality: Annotated[str | None, Form()] = None,
+    image_generation_size: Annotated[str | None, Form()] = None,
+    image_generation_background: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     status = "success"
     message_text = ""

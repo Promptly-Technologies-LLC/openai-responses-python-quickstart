@@ -3,7 +3,7 @@ import logging
 import os
 from typing import TypedDict
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
 from openai.types.file_object import FileObject
@@ -19,7 +19,7 @@ class PaginatedFiles(TypedDict):
 
 
 # Helper function to get or create a vector store (env-based, not assistant-bound)
-async def get_or_create_vector_store(client: AsyncOpenAI = Depends(lambda: AsyncOpenAI())) -> str:
+async def get_or_create_vector_store(client: AsyncOpenAI) -> str:
     from utils.config import update_env_file
     vs_id = os.getenv("VECTOR_STORE_ID")
     if vs_id:
