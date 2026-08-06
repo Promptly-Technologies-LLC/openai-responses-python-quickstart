@@ -1,4 +1,5 @@
 import logging
+
 from openai import AsyncOpenAI
 from openai.types.beta import Thread
 

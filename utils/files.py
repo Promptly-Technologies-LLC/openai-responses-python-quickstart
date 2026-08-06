@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import os
-from typing import List, Dict, TypedDict
+from typing import TypedDict
+
 from fastapi import Depends, HTTPException
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
@@ -12,7 +13,7 @@ logger = logging.getLogger("uvicorn.error")
 
 
 class PaginatedFiles(TypedDict):
-    files: List[Dict[str, str | None]]
+    files: list[dict[str, str | None]]
     has_more: bool
     last_id: str | None
 
@@ -53,7 +54,7 @@ async def get_files_for_vector_store(
                 limit=limit,
             )
 
-        async def resolve_file(vs_file: VectorStoreFile) -> Dict[str, str | None]:
+        async def resolve_file(vs_file: VectorStoreFile) -> dict[str, str | None]:
             try:
                 file_object: FileObject = await client.files.retrieve(vs_file.id)
                 return {
@@ -94,7 +95,7 @@ def store_file(file_name: str, file_content: bytes):
         with open(file_path, "wb") as f:
             f.write(file_content)
         logger.info(f"File stored successfully: {file_path}")
-    except IOError as e:
+    except OSError as e:
         logger.error(f"Error writing file {file_path}: {e}")
         # Re-raise a more specific exception or handle as needed
         # For now, letting the caller's try/except handle it might be okay

@@ -10,11 +10,12 @@ Mark: all tests use @pytest.mark.live to allow selective runs.
 """
 
 import asyncio
+from contextlib import suppress
 
 import pytest
+from conftest import REAL_API_KEY
 from openai import AsyncOpenAI
 
-from conftest import REAL_API_KEY
 from utils.files import get_files_for_vector_store
 
 _REAL_API_KEY = REAL_API_KEY
@@ -41,13 +42,12 @@ async def vector_store(client: AsyncOpenAI):
     # Cleanup: delete all files then the vector store
     files = await client.vector_stores.files.list(vector_store_id=vs.id)
     for f in files.data:
-        try:
+        # Best-effort cleanup: a failed delete shouldn't fail the test run
+        with suppress(Exception):
             await client.vector_stores.files.delete(
                 vector_store_id=vs.id, file_id=f.id
             )
             await client.files.delete(file_id=f.id)
-        except Exception:
-            pass
     await client.vector_stores.delete(vector_store_id=vs.id)
 
 

@@ -11,9 +11,8 @@ Mark: all tests use @pytest.mark.live to allow selective runs.
 """
 
 import pytest
-from openai import AsyncOpenAI
-
 from conftest import REAL_API_KEY
+from openai import AsyncOpenAI
 
 _REAL_API_KEY = REAL_API_KEY
 _has_real_key = bool(_REAL_API_KEY)

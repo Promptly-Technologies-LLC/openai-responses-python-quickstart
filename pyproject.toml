@@ -15,6 +15,30 @@ dependencies = [
     "uvicorn>=0.32.0",
 ]
 
+[tool.ruff.lint]
+# Ruff's default rule set is used as-is; these are the deliberate exceptions.
+ignore = [
+    # This app degrades gracefully instead of 500-ing: routes, the SSE stream,
+    # and the Playwright session wrap third-party calls (OpenAI SDK, Playwright)
+    # in a catch-all that logs the failure and renders an error partial. Those
+    # boundaries are intentionally blind.
+    "BLE001",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's parameter markers are designed to be called in argument defaults.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+
 [tool.pytest.ini_options]
 markers = [
     "live: tests that hit the real OpenAI API (require valid OPENAI_API_KEY)",
@@ -24,6 +48,6 @@ markers = [
 dev = [
     "pillow>=12.1.1",
     "pytest-playwright>=0.7.2",
-    "ruff>=0.15.5",
+    "ruff>=0.16.1",
     "ty>=0.0.1a21",
 ]

@@ -1,9 +1,10 @@
-import random
 import logging
+import random
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Sequence, Any, Annotated
-from pydantic import Field
+from typing import Annotated, Any
 
+from pydantic import Field
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -13,7 +14,7 @@ logger = logging.getLogger("uvicorn.error")
 
 def get_weather(
     location: Annotated[str, Field(description="The location to get weather reports for")],
-    dates: Annotated[Sequence[str | datetime], Field(description="The dates to get weather reports for")] = [datetime.today()]
+    dates: Annotated[Sequence[str | datetime], Field(description="The dates to get weather reports for")] = [datetime.now().astimezone()]
 ) -> list[dict[str, Any]]:
     """
     Retrieves weather reports for a given location over a date range.

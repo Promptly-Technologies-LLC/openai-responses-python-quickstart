@@ -1,17 +1,21 @@
-import os
+import asyncio
+import json
 import logging
-from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException, RequestValidationError
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, Response, HTMLResponse
-from routers import audio, chat, files, setup
-from utils.conversations import create_conversation
-from utils.computer_use import session_manager
-from fastapi.exceptions import HTTPException, RequestValidationError
 
+from routers import audio, chat, files, setup
+from utils.computer_use import session_manager
+from utils.conversations import create_conversation
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -19,18 +23,18 @@ logger = logging.getLogger("uvicorn.error")
 async def lifespan(app: FastAPI):
     # If tool.config.json doens't exist, create it
     if not os.path.exists("tool.config.json"):
-        import json
-        with open("tool.config.json", "w") as f:
-            f.write(json.dumps(
-                {"mcp_servers": [], "custom_functions": [
-                    {
-                        "name": "get_weather",
-                        "import_path": "utils.custom_functions",
-                        "template_path": "components/weather-widget.html"}
-                    ]
-                },
-                indent=4
-            ))
+        default_config = json.dumps(
+            {"mcp_servers": [], "custom_functions": [
+                {
+                    "name": "get_weather",
+                    "import_path": "utils.custom_functions",
+                    "template_path": "components/weather-widget.html"}
+                ]
+            },
+            indent=4
+        )
+        # Offload the blocking write so the event loop isn't stalled at startup
+        await asyncio.to_thread(Path("tool.config.json").write_text, default_config)
     # Optional startup logic
     yield
     # Clean up browser sessions on shutdown
@@ -93,8 +97,8 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Respon
 @app.get("/")
 async def read_home(
     request: Request,
-    conversation_id: Optional[str] = None,
-    messages: List[Dict[str, Any]] = []
+    conversation_id: str | None = None,
+    messages: list[dict[str, Any]] | None = None
 ) -> Response:
     logger.info("Home page requested")
     
@@ -112,7 +116,7 @@ async def read_home(
     return templates.TemplateResponse(
         request, "index.html",
         {
-            "messages": messages,
+            "messages": messages or [],
             "conversation_id": conversation_id
         }
     )

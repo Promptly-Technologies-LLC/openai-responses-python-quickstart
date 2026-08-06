@@ -1,9 +1,7 @@
 import asyncio
 import base64
 import logging
-from typing import Protocol, Union, runtime_checkable
-
-from playwright.async_api import async_playwright, Browser, Page, Playwright
+from typing import Protocol, runtime_checkable
 
 from openai.types.responses.computer_action import (
     Click,
@@ -16,13 +14,14 @@ from openai.types.responses.computer_action import (
     Type,
     Wait,
 )
+from playwright.async_api import Browser, Page, Playwright, async_playwright
 
 logger = logging.getLogger("uvicorn.error")
 
-Action = Union[
-    Click, DoubleClick, Drag, Keypress,
-    Move, Screenshot, Scroll, Type, Wait,
-]
+Action = (
+    Click | DoubleClick | Drag | Keypress
+    | Move | Screenshot | Scroll | Type | Wait
+)
 
 
 @runtime_checkable

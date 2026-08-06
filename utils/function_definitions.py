@@ -1,10 +1,18 @@
-import inspect
 import functools
+import inspect
 import json
-from logging import getLogger
 from collections.abc import Awaitable, Callable, Sequence
+from logging import getLogger
 from types import GenericAlias
-from typing import Annotated, Any, ForwardRef, cast, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    ForwardRef,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import pydantic_core
 from pydantic import (
@@ -176,9 +184,8 @@ def get_callable_name(fn: Any) -> str:
         if isinstance(name, str) and name:
             return name
 
-    call_obj = getattr(base, "__call__", None)
-    if call_obj is not None:
-        name = getattr(call_obj, "__name__", None)
+    if callable(base):
+        name = getattr(base.__call__, "__name__", None)
         if isinstance(name, str) and name:
             return name
 
@@ -204,9 +211,8 @@ def _get_callable_globals(fn: Any) -> dict[str, Any]:
         if isinstance(glb, dict):
             return glb
 
-    call_obj = getattr(base, "__call__", None)
-    if call_obj is not None:
-        glb = getattr(call_obj, "__globals__", None)
+    if callable(base):
+        glb = getattr(base.__call__, "__globals__", None)
         if isinstance(glb, dict):
             return glb
 

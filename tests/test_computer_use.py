@@ -14,8 +14,6 @@ import base64
 import io
 
 import pytest
-from PIL import Image
-
 from openai.types.responses.computer_action import (
     Click,
     DoubleClick,
@@ -28,17 +26,18 @@ from openai.types.responses.computer_action import (
     Type,
     Wait,
 )
+from PIL import Image
 
 from utils.computer_use import (
     BrowserSession,
     BrowserSessionManager,
     ComputerSession,
     ComputerSessionManager,
+    _map_button,
+    _map_key,
     build_computer_tool,
     describe_action,
     execute_computer_actions,
-    _map_key,
-    _map_button,
 )
 
 

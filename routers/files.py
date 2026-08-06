@@ -2,13 +2,30 @@ import asyncio
 import logging
 import mimetypes
 from typing import Literal
+
 from fastapi import (
-    APIRouter, Request, UploadFile, File, HTTPException, Depends, Path, Form, Query
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
 )
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
-from utils.files import get_or_create_vector_store, get_files_for_vector_store, store_file, retrieve_file, delete_local_file, PaginatedFiles
+
+from utils.files import (
+    PaginatedFiles,
+    delete_local_file,
+    get_files_for_vector_store,
+    get_or_create_vector_store,
+    retrieve_file,
+    store_file,
+)
 from utils.streaming import stream_file_content
 
 logger = logging.getLogger("uvicorn.error")
@@ -186,8 +203,8 @@ async def delete_all_files(
                 retrieved_file = await client.files.retrieve(vs_file_id)
                 if retrieved_file and retrieved_file.filename:
                     file_to_delete_name = retrieved_file.filename
-            except Exception:
-                pass
+            except Exception as retrieve_err:
+                logger.debug(f"Could not retrieve filename for {vs_file_id}: {retrieve_err}")
 
             if file_to_delete_name:
                 try:
@@ -369,7 +386,7 @@ async def download_container_file(
         )
     except Exception as e:
         logger.error(f"Error downloading file {file_id} from OpenAI: {e}")
-        raise HTTPException(status_code=500, detail=f"Error downloading file from OpenAI: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file from OpenAI: {e!s}")
 
 
 @router.get("/{file_id}/content")
