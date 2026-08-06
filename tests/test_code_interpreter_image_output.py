@@ -10,28 +10,26 @@ Tests for code interpreter image output rendering:
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import _dotenv, parse_sse_events
 from httpx import ASGITransport, AsyncClient
 from openai.types.responses import (
-    ResponseCompletedEvent,
-    ResponseCreatedEvent,
-    ResponseCodeInterpreterCallInProgressEvent,
     ResponseCodeInterpreterCallCodeDeltaEvent,
     ResponseCodeInterpreterCallCodeDoneEvent,
-    ResponseCodeInterpreterCallInterpretingEvent,
     ResponseCodeInterpreterCallCompletedEvent,
+    ResponseCodeInterpreterCallInProgressEvent,
+    ResponseCodeInterpreterCallInterpretingEvent,
+    ResponseCompletedEvent,
+    ResponseContentPartDoneEvent,
+    ResponseCreatedEvent,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseOutputTextAnnotationAddedEvent,
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
-    ResponseContentPartDoneEvent,
 )
 from openai.types.responses.response_code_interpreter_tool_call import (
     ResponseCodeInterpreterToolCall,
 )
-
-from conftest import parse_sse_events, _dotenv
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -318,18 +316,20 @@ async def _stream_ci_events(
 
     mock_client = build_code_interpreter_mock_client(stream)
 
-    with _dotenv(env_defaults, set_fake_api_key=False):
-        with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    "/chat/conv_test123/receive",
-                    timeout=10.0,
-                )
-                raw = response.text
-                # Explicitly close the response to prevent dangling connections
-                # that cause "Event loop is closed" errors during teardown.
-                await response.aclose()
+    with (
+        _dotenv(env_defaults, set_fake_api_key=False),
+        patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/chat/conv_test123/receive",
+                timeout=10.0,
+            )
+            raw = response.text
+            # Explicitly close the response to prevent dangling connections
+            # that cause "Event loop is closed" errors during teardown.
+            await response.aclose()
 
     return parse_sse_events(raw)
 

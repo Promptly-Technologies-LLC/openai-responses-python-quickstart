@@ -1,12 +1,12 @@
 import os
 import re
-import sys
-import time
 import socket
+import sys
 import threading
+import time
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Iterator
 
 import pytest
 
@@ -148,6 +148,7 @@ def _backup_dotenv() -> Iterator[None]:
 def app_server() -> Generator[int, None, None]:
     """Start the FastAPI app in a background thread on a free port."""
     import uvicorn
+
     from main import app  # imported here to avoid polluting the global scope
 
     # Seed the process environment so AsyncOpenAI() can always be instantiated

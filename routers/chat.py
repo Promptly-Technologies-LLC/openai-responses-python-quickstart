@@ -1,46 +1,76 @@
-import logging
-import json
 import asyncio
-from html import escape
+import json
+import logging
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from datetime import datetime
+from html import escape
+from pathlib import Path
 from types import ModuleType
-from typing import AsyncGenerator, Dict, Any, Callable, cast
-from pydantic import ValidationError
+from typing import Any, cast
+from urllib.parse import quote as url_quote
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from fastapi import APIRouter, Form, Depends, Request, UploadFile, File
-from fastapi.responses import StreamingResponse, HTMLResponse
-from openai.types.responses import (
-    ResponseCreatedEvent, ResponseOutputItemAddedEvent,
-    ResponseFunctionCallArgumentsDeltaEvent, ResponseFunctionCallArgumentsDoneEvent,
-    ResponseCompletedEvent, ResponseTextDeltaEvent, ResponseRefusalDeltaEvent,
-    ResponseFileSearchCallSearchingEvent, ResponseCodeInterpreterCallInProgressEvent,
-    ResponseOutputTextAnnotationAddedEvent, ResponseContentPartAddedEvent,
-    ResponseFileSearchCallInProgressEvent, ResponseFileSearchCallCompletedEvent,
-    ResponseOutputItemDoneEvent, ResponseInProgressEvent, ResponseTextDoneEvent,
-    ResponseContentPartDoneEvent, ResponseCodeInterpreterCallCodeDeltaEvent,
-    ResponseCodeInterpreterCallCodeDoneEvent, ResponseCodeInterpreterCallInterpretingEvent,
-    ResponseCodeInterpreterCallCompletedEvent, ResponseMcpListToolsInProgressEvent,
-    ResponseMcpListToolsFailedEvent, ResponseMcpListToolsCompletedEvent,
-    ResponseMcpCallArgumentsDoneEvent, ResponseMcpCallCompletedEvent,
-    ResponseMcpCallInProgressEvent, ResponseMcpCallArgumentsDeltaEvent,
-    ResponseWebSearchCallInProgressEvent, ResponseWebSearchCallSearchingEvent,
-    ResponseWebSearchCallCompletedEvent,
-    ResponseImageGenCallInProgressEvent, ResponseImageGenCallGeneratingEvent,
-    ResponseImageGenCallCompletedEvent, ResponseImageGenCallPartialImageEvent,
-)
-from openai.types.responses.response_output_item import McpApprovalRequest, ImageGenerationCall
-from openai.types.responses import ResponseFunctionToolCall, ResponseComputerToolCall
-from openai.types.responses.response_code_interpreter_tool_call import ResponseCodeInterpreterToolCall
-from openai._types import NOT_GIVEN
 from openai import AsyncOpenAI
-from collections.abc import Coroutine
+from openai._types import NOT_GIVEN
+from openai.types.responses import (
+    ResponseCodeInterpreterCallCodeDeltaEvent,
+    ResponseCodeInterpreterCallCodeDoneEvent,
+    ResponseCodeInterpreterCallCompletedEvent,
+    ResponseCodeInterpreterCallInProgressEvent,
+    ResponseCodeInterpreterCallInterpretingEvent,
+    ResponseCompletedEvent,
+    ResponseComputerToolCall,
+    ResponseContentPartAddedEvent,
+    ResponseContentPartDoneEvent,
+    ResponseCreatedEvent,
+    ResponseFileSearchCallCompletedEvent,
+    ResponseFileSearchCallInProgressEvent,
+    ResponseFileSearchCallSearchingEvent,
+    ResponseFunctionCallArgumentsDeltaEvent,
+    ResponseFunctionCallArgumentsDoneEvent,
+    ResponseFunctionToolCall,
+    ResponseImageGenCallCompletedEvent,
+    ResponseImageGenCallGeneratingEvent,
+    ResponseImageGenCallInProgressEvent,
+    ResponseImageGenCallPartialImageEvent,
+    ResponseInProgressEvent,
+    ResponseMcpCallArgumentsDeltaEvent,
+    ResponseMcpCallArgumentsDoneEvent,
+    ResponseMcpCallCompletedEvent,
+    ResponseMcpCallInProgressEvent,
+    ResponseMcpListToolsCompletedEvent,
+    ResponseMcpListToolsFailedEvent,
+    ResponseMcpListToolsInProgressEvent,
+    ResponseOutputItemAddedEvent,
+    ResponseOutputItemDoneEvent,
+    ResponseOutputTextAnnotationAddedEvent,
+    ResponseRefusalDeltaEvent,
+    ResponseTextDeltaEvent,
+    ResponseTextDoneEvent,
+    ResponseWebSearchCallCompletedEvent,
+    ResponseWebSearchCallInProgressEvent,
+    ResponseWebSearchCallSearchingEvent,
+)
+from openai.types.responses.response_code_interpreter_tool_call import (
+    ResponseCodeInterpreterToolCall,
+)
+from openai.types.responses.response_output_item import (
+    ImageGenerationCall,
+    McpApprovalRequest,
+)
+from pydantic import ValidationError
+
+from routers.files import router as files_router
+from utils.computer_use import (
+    build_computer_tool,
+    describe_actions,
+    execute_computer_actions,
+)
 from utils.function_calling import Context, FunctionResult
-from utils.computer_use import build_computer_tool, describe_actions, execute_computer_actions
 from utils.sse import sse_format
 from utils.tool_tasks import ToolTaskResult
-from urllib.parse import quote as url_quote
-from routers.files import router as files_router
-
 
 logger: logging.Logger = logging.getLogger("uvicorn.error")
 
@@ -69,7 +99,7 @@ async def send_message(
     # Build multimodal content array
     content: list[dict[str, str]] = [{
         "type": "input_text",
-        "text": f"System: Today's date is {datetime.today().strftime('%Y-%m-%d')}\n{userInput}"
+        "text": f"System: Today's date is {datetime.now().astimezone().strftime('%Y-%m-%d')}\n{userInput}"
     }]
 
     # If images were uploaded, send each to OpenAI and add to content
@@ -116,9 +146,11 @@ async def stream_response(
 ) -> StreamingResponse:
     async def event_generator() -> AsyncGenerator[str, None]:
         # Load config from env
-        import os
         import importlib
+        import os
+
         from dotenv import load_dotenv
+
         from utils.config import ToolConfig
         from utils.function_calling import ToolRegistry
         load_dotenv(override=True)
@@ -130,7 +162,7 @@ async def stream_response(
         TEMPLATE_REGISTRY: dict[str, str | tuple[str, Callable]] = {}
 
         # Build tools
-        tools: list[Dict[str, Any]] = []
+        tools: list[dict[str, Any]] = []
         if "file_search" in enabled_tools:
             vector_store_id = os.getenv("VECTOR_STORE_ID")
             if vector_store_id and vector_store_id.replace("_", "").replace("-", "").isalnum():
@@ -143,8 +175,9 @@ async def stream_response(
             })
         if "function" in enabled_tools or "mcp" in enabled_tools:
             try:
-                with open("tool.config.json", "r") as f:
-                    TOOL_CONFIG = ToolConfig.model_validate_json(f.read())
+                # Offload the blocking read so the SSE event loop isn't stalled
+                config_json = await asyncio.to_thread(Path("tool.config.json").read_text)
+                TOOL_CONFIG = ToolConfig.model_validate_json(config_json)
             except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
                 logger.error(f"Error loading tool.config.json: {e}")
                 TOOL_CONFIG = ToolConfig(mcp_servers=[], custom_functions=[])
@@ -164,7 +197,7 @@ async def stream_response(
             if "mcp" in enabled_tools:
                 tools.extend(TOOL_CONFIG.mcp_servers)
         if "web_search" in enabled_tools:
-            ws_tool: Dict[str, Any] = {"type": "web_search_preview"}
+            ws_tool: dict[str, Any] = {"type": "web_search_preview"}
             ctx_size = os.getenv("WEB_SEARCH_CONTEXT_SIZE", "medium").strip()
             if ctx_size in {"low", "medium", "high"}:
                 ws_tool["search_context_size"] = ctx_size
@@ -174,7 +207,7 @@ async def stream_response(
             region = os.getenv("WEB_SEARCH_LOCATION_REGION", "").strip()
             timezone = os.getenv("WEB_SEARCH_LOCATION_TIMEZONE", "").strip()
             if any([country, city, region, timezone]):
-                loc: Dict[str, str] = {"type": "approximate"}
+                loc: dict[str, str] = {"type": "approximate"}
                 if country:
                     loc["country"] = country
                 if city:
@@ -188,7 +221,7 @@ async def stream_response(
         if "computer_use" in enabled_tools:
             tools.append(build_computer_tool())
         if "image_generation" in enabled_tools:
-            ig_tool: Dict[str, Any] = {"type": "image_generation"}
+            ig_tool: dict[str, Any] = {"type": "image_generation"}
             ig_quality = os.getenv("IMAGE_GENERATION_QUALITY", "auto").strip()
             if ig_quality in {"low", "medium", "high"}:
                 ig_tool["quality"] = ig_quality
@@ -730,7 +763,7 @@ async def approve_mcp_tool(
     except Exception as e:
         logger.error(f"Failed to submit MCP approval response: {e}")
         # Render a minimal error card and allow retry
-        error_html = f"<div class=\"assistantMessage\">Error submitting approval: {str(e)}</div>"
+        error_html = f"<div class=\"assistantMessage\">Error submitting approval: {e!s}</div>"
         return HTMLResponse(content=error_html)
 
     # After approval decision, start a new stream run by returning a new assistant-run include

@@ -14,9 +14,8 @@ Mark: all tests use @pytest.mark.live to allow selective runs.
 import os
 
 import pytest
+from conftest import REAL_API_KEY, _dotenv, parse_sse_events
 from openai import AsyncOpenAI
-
-from conftest import REAL_API_KEY, parse_sse_events, _dotenv
 
 _REAL_API_KEY = REAL_API_KEY
 _has_real_key = bool(_REAL_API_KEY)
@@ -213,9 +212,11 @@ class TestWebSearchCitations:
         annotations = []
         async with stream as events:
             async for event in events:
-                if isinstance(event, ResponseOutputTextAnnotationAddedEvent):
-                    if event.annotation.get("type") == "url_citation":
-                        annotations.append(event.annotation)
+                if (
+                    isinstance(event, ResponseOutputTextAnnotationAddedEvent)
+                    and event.annotation.get("type") == "url_citation"
+                ):
+                    annotations.append(event.annotation)
 
         assert len(annotations) >= 1, "Expected at least one url_citation"
 
@@ -236,6 +237,7 @@ class TestWebSearchSsePipeline:
         """Hit the actual /receive endpoint with web_search enabled and verify
         the SSE stream contains the expected event types without errors."""
         from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         env = {

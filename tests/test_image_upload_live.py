@@ -17,9 +17,8 @@ import struct
 import zlib
 
 import pytest
+from conftest import REAL_API_KEY, _dotenv, parse_sse_events
 from openai import AsyncOpenAI
-
-from conftest import REAL_API_KEY, parse_sse_events, _dotenv
 
 _REAL_API_KEY = REAL_API_KEY
 _has_real_key = bool(_REAL_API_KEY)
@@ -124,6 +123,7 @@ class TestVisionSsePipeline:
         """Send a message with an image via the /send endpoint, then verify
         the /receive SSE stream produces a text response."""
         from httpx import ASGITransport, AsyncClient
+
         from main import app
 
         env = {

@@ -1,4 +1,4 @@
-from typing import AsyncIterable
+from collections.abc import AsyncIterable
 from dataclasses import dataclass
 
 

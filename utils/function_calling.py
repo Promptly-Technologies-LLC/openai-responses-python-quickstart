@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 import functools
-import warnings
 import inspect
 import json
+import warnings
 from collections.abc import Callable
-from typing import Generic, Optional, TypeVar, get_type_hints, get_origin, get_args, Union, Any
+from typing import (
+    Any,
+    Optional,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
-from pydantic import BaseModel
 from openai.types.responses.function_tool_param import FunctionToolParam
+from pydantic import BaseModel
 
 from utils.function_definitions import FuncMetadata, func_metadata, get_callable_name
 
 
-T = TypeVar("T")
-
-class FunctionResult(BaseModel, Generic[T]):
-    error: Optional[str] = None
-    warning: Optional[str] = None
-    result: Optional[T] = None
+class FunctionResult[T](BaseModel):
+    error: str | None = None
+    warning: str | None = None
+    result: T | None = None
 
 
 class ToolRuntimeError(Exception):
@@ -49,7 +54,7 @@ def _is_async_callable(obj: Any) -> bool:
     while isinstance(obj, functools.partial):
         obj = obj.func
     return inspect.iscoroutinefunction(obj) or (
-        callable(obj) and inspect.iscoroutinefunction(getattr(obj, "__call__", None))
+        callable(obj) and inspect.iscoroutinefunction(obj.__call__)
     )
 
 
@@ -62,7 +67,7 @@ def _find_context_parameter(fn: Callable[..., Any]) -> str | None:
         except Exception:
             return None
 
-    hints = _get_hints(fn) or _get_hints(getattr(type(fn), "__call__", None))
+    hints = _get_hints(fn) or _get_hints(type(fn).__call__ if callable(fn) else None)
     if hints is None:
         return None
 
@@ -99,7 +104,7 @@ class ToolRegistration(BaseModel):
         *,
         structured_output: bool | None = None,
         context_kwarg: str | None = None,
-    ) -> "ToolRegistration":
+    ) -> ToolRegistration:
         func_name = name or get_callable_name(fn)
         func_doc = (description if description is not None else (inspect.getdoc(fn) or "").strip())
         is_async = _is_async_callable(fn)

@@ -16,6 +16,7 @@ import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import PROJECT_ROOT, _dotenv, parse_sse_events
 from httpx import ASGITransport, AsyncClient
 from jinja2 import Environment, FileSystemLoader
 from openai.types.responses import (
@@ -24,25 +25,25 @@ from openai.types.responses import (
     ResponseCreatedEvent,
     ResponseFunctionCallArgumentsDeltaEvent,
     ResponseFunctionCallArgumentsDoneEvent,
+    ResponseFunctionToolCall,
+    ResponseImageGenCallCompletedEvent,
+    ResponseImageGenCallGeneratingEvent,
+    ResponseImageGenCallInProgressEvent,
+    ResponseImageGenCallPartialImageEvent,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseOutputTextAnnotationAddedEvent,
     ResponseTextDeltaEvent,
-    ResponseFunctionToolCall,
     ResponseWebSearchCallCompletedEvent,
     ResponseWebSearchCallInProgressEvent,
     ResponseWebSearchCallSearchingEvent,
-    ResponseImageGenCallInProgressEvent,
-    ResponseImageGenCallGeneratingEvent,
-    ResponseImageGenCallCompletedEvent,
-    ResponseImageGenCallPartialImageEvent,
 )
 from openai.types.responses.response_output_item import ImageGenerationCall
 
-from conftest import PROJECT_ROOT, parse_sse_events, _dotenv
+from routers.chat import wrap_for_oob_swap
 from utils.config import ToolConfig
 from utils.sse import sse_format
-from routers.chat import wrap_for_oob_swap
+
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
 
@@ -354,16 +355,18 @@ class TestFunctionCallSseIntegration:
 
         mock_client = build_mock_openai_client()
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get(
-                        "/chat/conv_test123/receive",
-                        timeout=10.0,
-                    )
-                    raw = response.text
-                    await response.aclose()
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    "/chat/conv_test123/receive",
+                    timeout=10.0,
+                )
+                raw = response.text
+                await response.aclose()
 
         return parse_sse_events(raw)
 
@@ -549,11 +552,13 @@ class TestWebSearchToolPayload:
 
         mock_client = build_web_search_mock_client()
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    await client.get("/chat/conv_test123/receive", timeout=10.0)
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.get("/chat/conv_test123/receive", timeout=10.0)
 
         return mock_client.responses.create.call_args.kwargs
 
@@ -637,13 +642,15 @@ class TestWebSearchSseIntegration:
 
         mock_client = build_web_search_mock_client()
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
-                    raw = response.text
-                    await response.aclose()
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                raw = response.text
+                await response.aclose()
 
         return parse_sse_events(raw)
 
@@ -794,11 +801,13 @@ class TestImageGenerationToolPayload:
 
         mock_client = build_image_generation_mock_client()
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    await client.get("/chat/conv_test123/receive", timeout=10.0)
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.get("/chat/conv_test123/receive", timeout=10.0)
 
         return mock_client.responses.create.call_args.kwargs
 
@@ -865,13 +874,15 @@ class TestImageGenerationSseIntegration:
 
         mock_client = build_image_generation_mock_client(include_partial=include_partial)
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
-                    raw = response.text
-                    await response.aclose()
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                raw = response.text
+                await response.aclose()
 
         return parse_sse_events(raw)
 
@@ -1050,13 +1061,15 @@ class TestImageGenerationWithTextSseIntegration:
 
         mock_client = build_image_generation_with_text_mock_client()
 
-        with _dotenv(env_defaults, set_fake_api_key=False):
-            with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-                transport = ASGITransport(app=app)
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    response = await client.get("/chat/conv_test123/receive", timeout=10.0)
-                    raw = response.text
-                    await response.aclose()
+        with (
+            _dotenv(env_defaults, set_fake_api_key=False),
+            patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get("/chat/conv_test123/receive", timeout=10.0)
+                raw = response.text
+                await response.aclose()
 
         return parse_sse_events(raw)
 

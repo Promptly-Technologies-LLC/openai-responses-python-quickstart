@@ -1,10 +1,10 @@
-import os
 import json
-from typing import Optional
-import pydantic
-from pydantic import ValidationError
-from openai.types.responses.tool_param import Mcp
+import os
 from logging import getLogger
+
+import pydantic
+from openai.types.responses.tool_param import Mcp
+from pydantic import ValidationError
 
 logger = getLogger("uvicorn.error")
 
@@ -12,7 +12,7 @@ logger = getLogger("uvicorn.error")
 class CustomFunction(pydantic.BaseModel):
     name: str
     import_path: str
-    template_path: Optional[str]
+    template_path: str | None
 
 
 class ToolConfig(pydantic.BaseModel):

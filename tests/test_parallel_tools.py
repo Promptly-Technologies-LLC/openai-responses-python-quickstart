@@ -16,21 +16,19 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from conftest import _dotenv, parse_sse_events
 from httpx import ASGITransport, AsyncClient
 from openai.types.responses import (
     ResponseCompletedEvent,
+    ResponseComputerToolCall,
     ResponseCreatedEvent,
     ResponseFunctionCallArgumentsDoneEvent,
+    ResponseFunctionToolCall,
     ResponseOutputItemAddedEvent,
     ResponseOutputItemDoneEvent,
     ResponseTextDeltaEvent,
-    ResponseFunctionToolCall,
-    ResponseComputerToolCall,
 )
 from openai.types.responses.response_output_item import McpApprovalRequest
-
-from conftest import parse_sse_events, _dotenv
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -189,16 +187,18 @@ async def stream_events(mock_client: AsyncMock, env_overrides: dict | None = Non
 
     env = {**ENV_DEFAULTS, **(env_overrides or {})}
 
-    with _dotenv(env, set_fake_api_key=False):
-        with patch("routers.chat.AsyncOpenAI", return_value=mock_client):
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                response = await client.get(
-                    f"/chat/{CONV_ID}/receive",
-                    timeout=10.0,
-                )
-                raw = response.text
-                await response.aclose()
+    with (
+        _dotenv(env, set_fake_api_key=False),
+        patch("routers.chat.AsyncOpenAI", return_value=mock_client),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                f"/chat/{CONV_ID}/receive",
+                timeout=10.0,
+            )
+            raw = response.text
+            await response.aclose()
 
     return parse_sse_events(raw)
 
@@ -486,9 +486,11 @@ class TestComputerCallSequential:
 
         mock_client = build_mock_client([stream, make_text_reply_stream()])
 
-        with patch("routers.chat.execute_computer_actions", new_callable=AsyncMock, return_value="base64screenshot"):
-            with patch("routers.chat.describe_actions", return_value="Click at (100, 200)"):
-                events = await stream_events(mock_client, {"ENABLED_TOOLS": "computer_use"})
+        with (
+            patch("routers.chat.execute_computer_actions", new_callable=AsyncMock, return_value="base64screenshot"),
+            patch("routers.chat.describe_actions", return_value="Click at (100, 200)"),
+        ):
+            events = await stream_events(mock_client, {"ENABLED_TOOLS": "computer_use"})
 
         event_names = [e["event"] for e in events]
         assert "imageOutput" in event_names

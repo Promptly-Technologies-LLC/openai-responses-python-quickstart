@@ -1,6 +1,8 @@
 """Unit tests for audio transcription endpoint."""
 
+import asyncio
 import io
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -62,6 +64,5 @@ async def test_mic_button_present_in_index():
     else:
         # If redirected to setup, verify the index template has the button
         # by reading the template file directly
-        with open("templates/index.html") as f:
-            template = f.read()
+        template = await asyncio.to_thread(Path("templates/index.html").read_text)
         assert "micButton" in template

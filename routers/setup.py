@@ -1,16 +1,22 @@
+import json
 import logging
 import os
-import json
-from typing import Optional, List
 from itertools import zip_longest
+from urllib.parse import quote
+
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from openai import AsyncOpenAI
-from urllib.parse import quote
 
-from utils.config import update_env_file, generate_registry_file, read_registry_entries, read_mcp_servers, CustomFunction
+from utils.config import (
+    CustomFunction,
+    generate_registry_file,
+    read_mcp_servers,
+    read_registry_entries,
+    update_env_file,
+)
 
 # Configure logger
 logger = logging.getLogger("uvicorn.error")
@@ -42,7 +48,7 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update API key: {str(e)}"
+            detail=f"Failed to update API key: {e!s}"
         )
 
 
@@ -51,15 +57,15 @@ async def set_openai_api_key(api_key: str = Form(...)) -> RedirectResponse:
 async def read_setup(
     request: Request,
     client: AsyncOpenAI = Depends(lambda: AsyncOpenAI()),
-    status: Optional[str] = None,
-    message_text: Optional[str] = None
+    status: str | None = None,
+    message_text: str | None = None
 ) -> Response:
     # Variable initializations
-    current_tools: List[str] = []
-    current_model: Optional[str] = None
-    current_instructions: Optional[str] = None
+    current_tools: list[str] = []
+    current_model: str | None = None
+    current_instructions: str | None = None
     # Populate with all models extracted from user-provided HTML, sorted
-    available_models: List[str] = sorted([ 
+    available_models: list[str] = sorted([ 
         "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", 
         "gpt-4o", "gpt-4o-mini", "o1", "o1-mini",
         "o3", "o3-pro", "o3-mini", "o4-mini",
@@ -224,28 +230,28 @@ async def delete_mcp_row() -> Response:
 
 @router.post("/config")
 async def save_app_config(
-    action: Optional[str] = Form(default=None),
-    tool_types: List[str] = Form(default=[]),
-    model: Optional[str] = Form(default=None),
-    instructions: Optional[str] = Form(default=None),
-    show_tool_call_detail: Optional[str] = Form(default=None),
-    reg_function_names: List[str] = Form(default=[]),
-    reg_import_paths: List[str] = Form(default=[]),
-    reg_template_paths: List[str] = Form(default=[]),
-    mcp_labels: List[str] = Form(default=[]),
-    mcp_server_urls: List[str] = Form(default=[]),
-    mcp_connector_ids: List[str] = Form(default=[]),
-    mcp_authorizations: List[str] = Form(default=[]),
-    mcp_headers_jsons: List[str] = Form(default=[]),
-    mcp_require_approvals: List[str] = Form(default=[]),
-    web_search_context_size: Optional[str] = Form(default=None),
-    web_search_country: Optional[str] = Form(default=None),
-    web_search_city: Optional[str] = Form(default=None),
-    web_search_region: Optional[str] = Form(default=None),
-    web_search_timezone: Optional[str] = Form(default=None),
-    image_generation_quality: Optional[str] = Form(default=None),
-    image_generation_size: Optional[str] = Form(default=None),
-    image_generation_background: Optional[str] = Form(default=None),
+    action: str | None = Form(default=None),
+    tool_types: list[str] = Form(default=[]),
+    model: str | None = Form(default=None),
+    instructions: str | None = Form(default=None),
+    show_tool_call_detail: str | None = Form(default=None),
+    reg_function_names: list[str] = Form(default=[]),
+    reg_import_paths: list[str] = Form(default=[]),
+    reg_template_paths: list[str] = Form(default=[]),
+    mcp_labels: list[str] = Form(default=[]),
+    mcp_server_urls: list[str] = Form(default=[]),
+    mcp_connector_ids: list[str] = Form(default=[]),
+    mcp_authorizations: list[str] = Form(default=[]),
+    mcp_headers_jsons: list[str] = Form(default=[]),
+    mcp_require_approvals: list[str] = Form(default=[]),
+    web_search_context_size: str | None = Form(default=None),
+    web_search_country: str | None = Form(default=None),
+    web_search_city: str | None = Form(default=None),
+    web_search_region: str | None = Form(default=None),
+    web_search_timezone: str | None = Form(default=None),
+    image_generation_quality: str | None = Form(default=None),
+    image_generation_size: str | None = Form(default=None),
+    image_generation_background: str | None = Form(default=None),
 ) -> RedirectResponse:
     status = "success"
     message_text = ""
@@ -280,7 +286,7 @@ async def save_app_config(
                 len(mcp_require_approvals),
             )
 
-            def get_or_empty(items: List[str], i: int) -> str:
+            def get_or_empty(items: list[str], i: int) -> str:
                 try:
                     return (items[i] or "").strip()
                 except IndexError:

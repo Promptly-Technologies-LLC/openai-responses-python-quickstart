@@ -1,4 +1,5 @@
 import logging
+
 from openai import AsyncOpenAI
 
 logger = logging.getLogger("uvicorn.error")

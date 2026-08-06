@@ -72,7 +72,7 @@ async def test_deleted_file_not_in_response_when_api_still_returns_it():
     # files.retrieve for get_files_for_vector_store: deleted file raises, other succeeds
     async def retrieve_side_effect(file_id):
         if file_id == deleted_file_id:
-            raise Exception("File not found")
+            raise RuntimeError("File not found")
         return make_file_object(other_file_id, "keep-me.txt")
 
     mock_client.files.retrieve = AsyncMock(side_effect=retrieve_side_effect)

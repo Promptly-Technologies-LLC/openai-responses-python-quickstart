@@ -122,7 +122,7 @@ async def test_delete_all_continues_on_individual_failure():
     # file-bbb retrieve fails
     async def retrieve_side_effect(file_id):
         if file_id == "file-bbb":
-            raise Exception("Not found")
+            raise RuntimeError("Not found")
         return make_file_object(file_id, f"{file_id}.txt")
 
     mock_client.files.retrieve = AsyncMock(side_effect=retrieve_side_effect)
@@ -130,7 +130,7 @@ async def test_delete_all_continues_on_individual_failure():
     # VS delete: file-bbb fails, others succeed
     async def vs_delete_side_effect(*, vector_store_id, file_id):
         if file_id == "file-bbb":
-            raise Exception("Delete failed")
+            raise RuntimeError("Delete failed")
         return make_deleted_response(deleted=True)
 
     mock_client.vector_stores.files.delete = AsyncMock(side_effect=vs_delete_side_effect)
